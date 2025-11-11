@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
-from .models import User, UserProfile
+from .models import User, UserProfile, Ride, DriverLocation
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
@@ -16,8 +16,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({"password": "Password fields didn't match."})
         
-
-    # Validate driver fields
+        # Validate driver fields
         if attrs.get('user_type') == 'driver' and not attrs.get('driver_license'):
             raise serializers.ValidationError({"driver_license": "Driver license is required for drivers."})
         
@@ -28,12 +27,12 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             if not attrs.get('organization'):
                 raise serializers.ValidationError({"organization": "Organization is required for emergency responders."})
         
-        return attrs
+        return attrs  
     
     def create(self, validated_data):
         validated_data.pop('password2')
         
-        # Extract user type specific fields
+       
         user_type = validated_data.get('user_type')
         driver_license = validated_data.pop('driver_license', None)
         responder_type = validated_data.pop('responder_type', None)
@@ -103,3 +102,36 @@ class UserSerializer(serializers.ModelSerializer):
             }
         except UserProfile.DoesNotExist:
             return None    
+        
+#RIDES  
+class RideSerializer(serializers.ModelSerializer):
+    customer_name = serializers.CharField(source='customer.get_full_name', read_only=True)
+    driver_name = serializers.CharField(source='driver.get_full_name', read_only=True)
+    customer_phone = serializers.CharField(source='customer.phone_number', read_only=True)
+    
+    class Meta:
+        model = Ride
+        fields = (
+            'id', 'customer', 'customer_name', 'customer_phone',
+            'driver', 'driver_name', 'pickup_lat', 'pickup_lng',
+            'dropoff_lat', 'dropoff_lng', 'pickup_address', 
+            'dropoff_address', 'status', 'fare', 'created_at'
+        )
+        read_only_fields = ('id', 'customer', 'driver', 'created_at')
+
+class DriverLocationSerializer(serializers.ModelSerializer):
+    driver_name = serializers.CharField(source='driver.get_full_name', read_only=True)
+    driver_phone = serializers.CharField(source='driver.phone_number', read_only=True)
+    vehicle_type = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = DriverLocation
+        fields = ('id', 'driver', 'driver_name', 'driver_phone', 
+                 'vehicle_type', 'lat', 'lng', 'is_online', 'last_updated')
+        read_only_fields = ('id', 'driver', 'last_updated')
+    
+    def get_vehicle_type(self, obj):
+        try:
+            return obj.driver.vehicle.vehicle_type
+        except:
+            return None      
