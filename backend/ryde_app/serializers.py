@@ -1,24 +1,41 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
-from .models import User, UserProfile, Ride, DriverLocation
+from .models import User, UserProfile, Ride, DriverLocation, RideMessage, RideRating, Vehicle
 
+#register
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
     password2 = serializers.CharField(write_only=True, min_length=8)
+    
+    
+    vehicle_type = serializers.CharField(write_only=True, required=False)
+    license_plate = serializers.CharField(write_only=True, required=False)
+    make = serializers.CharField(write_only=True, required=False)
+    model = serializers.CharField(write_only=True, required=False)
+    year = serializers.IntegerField(write_only=True, required=False)
+    color = serializers.CharField(write_only=True, required=False)
     
     class Meta:
         model = User
         fields = ('email', 'password', 'password2', 'user_type', 'phone_number', 
                  'first_name', 'last_name', 'driver_license', 'responder_type', 
-                 'organization')
+                 'organization', 'vehicle_type', 'license_plate', 'make', 'model', 
+                 'year', 'color')
     
     def validate(self, attrs):
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({"password": "Password fields didn't match."})
         
         # Validate driver fields
-        if attrs.get('user_type') == 'driver' and not attrs.get('driver_license'):
-            raise serializers.ValidationError({"driver_license": "Driver license is required for drivers."})
+        if attrs.get('user_type') == 'driver':
+            if not attrs.get('driver_license'):
+                raise serializers.ValidationError({"driver_license": "Driver license is required for drivers."})
+            
+            # Validate vehicle fields 
+            vehicle_fields = ['vehicle_type', 'license_plate', 'make', 'model', 'year', 'color']
+            for field in vehicle_fields:
+                if not attrs.get(field):
+                    raise serializers.ValidationError({field: f"{field.replace('_', ' ').title()} is required for drivers."})
         
         # Validate emergency responder fields
         if attrs.get('user_type') == 'emergency_responder':
@@ -32,12 +49,17 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop('password2')
         
-       
+        # Extract vehicle data
         user_type = validated_data.get('user_type')
-        driver_license = validated_data.pop('driver_license', None)
-        responder_type = validated_data.pop('responder_type', None)
-        organization = validated_data.pop('organization', None)
+        vehicle_data = {}
         
+        if user_type == 'driver':
+            vehicle_fields = ['vehicle_type', 'license_plate', 'make', 'model', 'year', 'color']
+            for field in vehicle_fields:
+                if field in validated_data:
+                    vehicle_data[field] = validated_data.pop(field)
+        
+        # Create user with pending approval for drivers
         user = User.objects.create_user(
             email=validated_data['email'],
             password=validated_data['password'],
@@ -47,15 +69,23 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             last_name=validated_data.get('last_name', '')
         )
         
-        # Set driver fields
-        if user_type == 'driver' and driver_license:
-            user.driver_license = driver_license
+        # Set driver fields with pending approval
+        if user_type == 'driver':
+            user.driver_license = validated_data.get('driver_license')
+            user.submitted_for_approval = True
             user.save()
+            
+            # Create vehicle with pending approval
+            if vehicle_data:
+                Vehicle.objects.create(
+                    driver=user,
+                    **vehicle_data
+                )
         
         # Set emergency responder fields
         if user_type == 'emergency_responder':
-            user.responder_type = responder_type
-            user.organization = organization
+            user.responder_type = validated_data.get('responder_type')
+            user.organization = validated_data.get('organization')
             user.save()
         
         # Create user profile
@@ -134,4 +164,18 @@ class DriverLocationSerializer(serializers.ModelSerializer):
         try:
             return obj.driver.vehicle.vehicle_type
         except:
-            return None      
+            return None  
+
+
+class RideMessageSerializer(serializers.ModelSerializer):
+    sender = UserSerializer(read_only=True)
+    
+    class Meta:
+        model = RideMessage
+        fields = '__all__'    
+
+
+class RideRatingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RideRating
+        fields = '__all__'                

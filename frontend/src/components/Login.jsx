@@ -21,20 +21,26 @@ const Login = () => {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+  e.preventDefault();
+  setError('');
+  setLoading(true);
 
-    try {
-      await AuthService.login(formData);
+  try {
+    await AuthService.login(formData);
+    const user = AuthService.getCurrentUser();
+    
+    
+    if (user.user_type === 'driver' || user.user_type === 'boda_rider') {
+      navigate('/driver/dashboard');
+    } else {
       navigate('/dashboard');
-    } catch (error) {
-      setError(error.detail || 'Login failed. Please check your credentials.');
-    } finally {
-      setLoading(false);
     }
-  };
-
+  } catch (error) {
+    setError(error.detail || 'Login failed. Please check your credentials.');
+  } finally {
+    setLoading(false);
+  }
+};
   const demoAccounts = [
     { email: 'customer@ryde.com', password: 'demo123', role: 'Customer' },
     { email: 'driver@ryde.com', password: 'demo123', role: 'Driver' },

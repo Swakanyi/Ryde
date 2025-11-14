@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
-import { Home, MapPin, Navigation, DollarSign, Clock, Car, Bike, AlertCircle, Search } from 'lucide-react';
+import { Home, User, Phone, MessageCircle, MapPin, Navigation, DollarSign, Clock, Car, Bike, AlertCircle, Search } from 'lucide-react';
 import RideService from '../services/ride';
+import websocketService from '../services/webSocketService';
 import 'leaflet/dist/leaflet.css';
 
 // Fix for default markers in react-leaflet
@@ -41,7 +42,156 @@ const CustomerDash = () => {
   const [routeGeometry, setRouteGeometry] = useState(null);
   const [mapCenter, setMapCenter] = useState([-1.2921, 36.8219]); // Nairobi coordinates
   const [error, setError] = useState('');
+  const [activeRide, setActiveRide] = useState(null);
+  const [driverLocation, setDriverLocation] = useState(null);
+  const [rideStatus, setRideStatus] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [showChat, setShowChat] = useState(false);
+  const [driverInfo, setDriverInfo] = useState(null);
+
+  const chatEndRef = useRef(null);
   
+  // WebSocket connection for customer
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const customerId = localStorage.getItem('user_id'); // Assuming you store user ID
+    
+    if (customerId && token) {
+      websocketService.connect('customer', customerId, token);
+      
+      // Set up message handlers
+      websocketService.onMessage('ride_status_update', handleRideStatusUpdate);
+      websocketService.onMessage('location_update', handleDriverLocationUpdate);
+      websocketService.onMessage('chat_message', handleChatMessage);
+      websocketService.onMessage('new_ride_request', handleNewRideRequest);
+    }
+
+    return () => {
+      websocketService.disconnect();
+      websocketService.removeMessageHandler('ride_status_update');
+      websocketService.removeMessageHandler('location_update');
+      websocketService.removeMessageHandler('chat_message');
+      websocketService.removeMessageHandler('new_ride_request');
+    };
+  }, []);
+
+  // Handle ride status updates
+  const handleRideStatusUpdate = (data) => {
+    setRideStatus(data.status);
+    
+    if (data.status === 'accepted') {
+      // Fetch driver info when ride is accepted
+      fetchDriverInfo(data.driver_id);
+    }
+    
+    if (data.status === 'completed' || data.status === 'cancelled') {
+      setActiveRide(null);
+      setDriverLocation(null);
+      setDriverInfo(null);
+    }
+  };
+
+  // Handle driver location updates
+  const handleDriverLocationUpdate = (data) => {
+    setDriverLocation({ lat: data.lat, lng: data.lng });
+  };
+
+  // Handle chat messages
+  const handleChatMessage = (data) => {
+    setChatMessages(prev => [...prev, {
+      id: Date.now(),
+      message: data.message,
+      sender: 'driver',
+      timestamp: data.timestamp,
+      sender_name: data.sender_name
+    }]);
+  };
+
+  const handleNewRideRequest = (data) => {
+    // This would be for the driver side, but keeping for consistency
+    console.log('New ride request:', data);
+  };
+
+  const fetchDriverInfo = async (driverId) => {
+    try {
+      const driverData = await RideService.getDriverInfo(driverId);
+      setDriverInfo(driverData);
+    } catch (error) {
+      console.error('Error fetching driver info:', error);
+    }
+  };
+
+  // Update requestRide function to handle WebSocket after ride creation
+  const requestRide = async () => {
+    if (!fareEstimate) {
+      setError('Please calculate a route first');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const rideData = {
+        pickup_address: pickup,
+        dropoff_address: dropoff,
+        pickup_lat: pickupCoords[0],
+        pickup_lng: pickupCoords[1],
+        dropoff_lat: dropoffCoords[0],
+        dropoff_lng: dropoffCoords[1],
+        vehicle_type: selectedVehicle,
+        estimated_fare: fareEstimate.total
+      };
+
+      const result = await RideService.requestRide(rideData);
+      
+      // Set active ride
+      setActiveRide(result);
+      setRideStatus('requested');
+      
+      alert(`Ride requested successfully! Your driver will be notified. Fare: KSH ${result.fare}`);
+      
+    } catch (error) {
+      console.error('Ride request error:', error);
+      setError('Failed to request ride. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Send chat message
+  const sendMessage = () => {
+    if (!newMessage.trim() || !activeRide) return;
+
+    const messageData = {
+      message: newMessage,
+      timestamp: new Date().toISOString()
+    };
+
+    // Send via WebSocket
+    websocketService.sendMessage('chat_message', messageData);
+
+    // Add to local messages
+    setChatMessages(prev => [...prev, {
+      id: Date.now(),
+      message: newMessage,
+      sender: 'customer',
+      timestamp: messageData.timestamp,
+      sender_name: 'You'
+    }]);
+
+    setNewMessage('');
+  };
+
+  // Scroll to bottom of chat
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages]);
+
+
   // Autocomplete states
   const [pickupSuggestions, setPickupSuggestions] = useState([]);
   const [dropoffSuggestions, setDropoffSuggestions] = useState([]);
@@ -105,7 +255,7 @@ const CustomerDash = () => {
     }
   };
 
-  // Handle address selection from suggestions
+  // address selection from suggestions
   const handleAddressSelect = async (suggestion, type) => {
     try {
       const placeDetails = await RideService.getPlaceDetails(suggestion.place_id);
@@ -278,47 +428,6 @@ const CustomerDash = () => {
       setMapCenter(currentLocation);
       setPickup('Current Location');
       setError('');
-    }
-  };
-
-  const requestRide = async () => {
-    if (!fareEstimate) {
-      setError('Please calculate a route first');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-
-    try {
-      const rideData = {
-        pickup_address: pickup,
-        dropoff_address: dropoff,
-        pickup_lat: pickupCoords[0],
-        pickup_lng: pickupCoords[1],
-        dropoff_lat: dropoffCoords[0],
-        dropoff_lng: dropoffCoords[1],
-      };
-
-      const result = await RideService.requestRide(rideData);
-      alert(`Ride requested successfully! Your driver will be notified. Fare: KSH ${result.fare}`);
-      
-      // Reset form
-      setPickup('');
-      setDropoff('');
-      setPickupCoords(null);
-      setDropoffCoords(null);
-      setDistance(null);
-      setDuration(null);
-      setFareEstimate(null);
-      setRouteGeometry(null);
-      setError('');
-      
-    } catch (error) {
-      console.error('Ride request error:', error);
-      setError('Failed to request ride. Please try again.');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -723,6 +832,7 @@ const CustomerDash = () => {
       </div>
     </div>
   );
-};
+}
+
 
 export default CustomerDash;

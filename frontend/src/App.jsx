@@ -9,45 +9,41 @@ import MyRides from './components/MyRides'
 import CustomerDash from './components/CustomerDash';
 import Homepage from './components/Homepage';
 import Chatbot from './components/Chatbot';
+import DriverDash from './components/driver/DriverDash';
 
 const ProtectedRoute = ({ children }) => {
   return AuthService.isAuthenticated() ? children : <Navigate to="/login" />;
 };
 
-
-const UserRoute = ({ children }) => {
+const CustomerRoute = ({ children }) => {
   const user = AuthService.getCurrentUser();
-  
-  if (!user) {
-    return <Navigate to="/login" />;
-  }
+  if (!user) return <Navigate to="/login" />;
+  if (user.user_type === 'customer') return children;
+  return <Navigate to="/driver/dashboard" />;
+};
 
-  
-  if (user.user_type === 'customer') {
-    return <CustomerDash />;
-  }
-
-  
-  return children;
+const DriverRoute = ({ children }) => {
+  const user = AuthService.getCurrentUser();
+  if (!user) return <Navigate to="/login" />;
+  if (user.user_type === 'driver' || user.user_type === 'boda_rider') return children;
+  return <Navigate to="/dashboard" />;
 };
 
 function App() {
   return (
     
       <div className="App">
-  
         <Routes>
           <Route path="/" element={<Navigate to="/homepage" />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          <Route path="/request-ride" element={<ProtectedRoute> <RequestRide /> </ProtectedRoute>} />
-          <Route path="/my-rides" element={ <ProtectedRoute> <MyRides /> </ProtectedRoute>} />
-          <Route path="/dashboard" element={ <ProtectedRoute> <UserRoute> <CustomerDash /> </UserRoute> </ProtectedRoute>} />
+          <Route path="/request-ride" element={<ProtectedRoute><CustomerRoute><RequestRide /></CustomerRoute></ProtectedRoute>} />
+          <Route path="/my-rides" element={<ProtectedRoute><CustomerRoute><MyRides /></CustomerRoute></ProtectedRoute>} />
+          <Route path="/dashboard" element={<ProtectedRoute><CustomerRoute><CustomerDash /></CustomerRoute></ProtectedRoute>} />
+          <Route path="/driver/dashboard" element={<ProtectedRoute><DriverRoute><DriverDash /></DriverRoute></ProtectedRoute>} />
           <Route path="/homepage" element={<Homepage />} />
           <Route path="/chatbot" element={<Chatbot />} />
-          
         </Routes>
-       
       </div>
     
   );

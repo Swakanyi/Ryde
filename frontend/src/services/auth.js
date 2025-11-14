@@ -7,7 +7,7 @@ const api = axios.create({
 });
 
 class AuthService {
-  // Register new user
+  // Register 
   async register(userData) {
     try {
       const response = await api.post('/register/', userData);
@@ -21,7 +21,7 @@ class AuthService {
     }
   }
 
-  // Login user
+  // Login 
   async login(credentials) {
     try {
       const response = await api.post('/login/', credentials);

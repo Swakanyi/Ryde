@@ -44,6 +44,27 @@ class User(AbstractUser):
     driver_license = models.CharField(max_length=50, blank=True, null=True)
     license_expiry = models.DateField(null=True, blank=True)
     is_approved = models.BooleanField(default=False)
+    approval_status = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', 'Pending Approval'),
+            ('approved', 'Approved'),
+            ('rejected', 'Rejected'),
+            ('suspended', 'Suspended'),
+        ],
+        default='pending'
+    )
+    submitted_for_approval = models.BooleanField(default=False)
+    approval_date = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        'self', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        limit_choices_to={'is_staff': True},
+        related_name='approved_drivers'
+    )
+    rejection_reason = models.TextField(blank=True, null=True)
     
     # Emergency Responder
     responder_type = models.CharField(
@@ -75,6 +96,7 @@ class UserProfile(models.Model):
     def __str__(self):
         return f"Profile of {self.user.email}"
 
+
 class Vehicle(models.Model):
     VEHICLE_TYPES = [
         ('economy', 'Economy'),
@@ -92,6 +114,18 @@ class Vehicle(models.Model):
     year = models.IntegerField()
     color = models.CharField(max_length=30)
     is_approved = models.BooleanField(default=False)
+    insurance_number = models.CharField(max_length=100, blank=True, null=True)
+    insurance_expiry = models.DateField(null=True, blank=True)
+    vehicle_photo = models.ImageField(upload_to='vehicles/', null=True, blank=True)
+    vehicle_approval_status = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', 'Pending'),
+            ('approved', 'Approved'),
+            ('rejected', 'Rejected'),
+        ],
+        default='pending'
+    )
 
 class Ride(models.Model):
     STATUS_CHOICES = [
@@ -127,6 +161,33 @@ class Ride(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     fare = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
 
+    estimated_arrival = models.DateTimeField(null=True, blank=True)
+    actual_pickup_time = models.DateTimeField(null=True, blank=True)
+    actual_dropoff_time = models.DateTimeField(null=True, blank=True)
+    distance_km = models.FloatField(null=True, blank=True)
+    duration_minutes = models.IntegerField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Ride {self.id} - {self.customer.email}"
+
+
+class RideMessage(models.Model):
+    MESSAGE_TYPES = [
+        ('text', 'Text'),
+        ('location', 'Location'),
+        ('system', 'System'),
+    ]
+    
+    ride = models.ForeignKey(Ride, on_delete=models.CASCADE, related_name='messages')
+    sender = models.ForeignKey(User, on_delete=models.CASCADE)
+    message_type = models.CharField(max_length=10, choices=MESSAGE_TYPES, default='text')
+    content = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+    is_read = models.BooleanField(default=False)
+    
+    class Meta:
+        ordering = ['timestamp']
+
 class EmergencyRequest(models.Model):
     SERVICE_TYPES = [
         ('ambulance', 'Ambulance'),
@@ -158,4 +219,18 @@ class DriverLocation(models.Model):
     lat = models.FloatField()
     lng = models.FloatField()
     last_updated = models.DateTimeField(auto_now=True)
-    is_online = models.BooleanField(default=False)    
+    is_online = models.BooleanField(default=False) 
+    current_ride = models.ForeignKey(
+        Ride, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='active_driver'
+    )  
+
+
+class RideRating(models.Model):
+    ride = models.OneToOneField(Ride, on_delete=models.CASCADE, related_name='rating')
+    rating = models.IntegerField(choices=[(i, i) for i in range(1, 6)])  # 1-5 stars
+    comment = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)     

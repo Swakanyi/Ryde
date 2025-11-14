@@ -3,13 +3,15 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import login
-from .models import User, UserProfile, Ride, DriverLocation
-from .serializers import UserRegistrationSerializer, UserLoginSerializer, UserSerializer, RideSerializer, DriverLocationSerializer
+from django.db import models
+from .models import User, UserProfile, Ride, DriverLocation, RideMessage
+from .serializers import UserRegistrationSerializer, UserLoginSerializer, UserSerializer, RideSerializer, DriverLocationSerializer, RideMessageSerializer
 from django.utils import timezone
 import math
 import requests
 import json
 from django.conf import settings
+from django.db.models import Q
 
 # Authentication Views
 @api_view(['POST'])
@@ -22,14 +24,32 @@ def register_user(request):
             
             refresh = RefreshToken.for_user(user)
             
-            return Response({
+           
+            if user.user_type in ['driver', 'boda_rider']:
+                message = 'Driver registration submitted for admin approval'
+                approval_status = 'pending'
+                can_login = True
+                can_drive = False
+            else:
+                message = 'User registered successfully'
+                approval_status = 'approved'
+                can_login = True
+                can_drive = False
+            
+            response_data = {
                 'user': UserSerializer(user).data,
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
-                'message': 'User registered successfully'
-            }, status=status.HTTP_201_CREATED)
+                'message': message,
+                'approval_status': approval_status,
+                'can_login': can_login,
+                'can_drive': can_drive,
+            }
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
 
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
@@ -78,7 +98,7 @@ def logout_user(request):
 # Map Helper Functions with Google Maps API
 def calculate_distance(lat1, lon1, lat2, lon2):
     """Calculate distance between two coordinates in kilometers using Haversine formula"""
-    R = 6371  # Earth's radius in kilometers
+    R = 6371 
     
     lat1_rad = math.radians(lat1)
     lat2_rad = math.radians(lat2)
@@ -99,13 +119,13 @@ def geocode_address(address):
         params = {
             'address': address,
             'key': settings.GOOGLE_API_KEY,
-            'components': 'country:KE'  # Focus on Kenya
+            'components': 'country:KE'  
         }
         
         response = requests.get(base_url, params=params, timeout=10)
         data = response.json()
         
-        print(f"Google Maps API Response: {data['status']}")  # Debug logging
+        print(f"Google Maps API Response: {data['status']}")  
         
         if data['status'] == 'OK':
             result = data['results'][0]
@@ -153,7 +173,7 @@ def get_google_route(start_lat, start_lng, end_lat, end_lng):
         print(f"Google Directions error: {e}")
         return None
 
-# Ride Views with Google Maps Integration
+# Ride Views 
 @api_view(['POST'])
 def request_ride(request):
     """Customer requests a ride with Google Maps integration"""
@@ -214,13 +234,13 @@ def request_ride(request):
             duration_min = distance_km * 2  # Rough estimate: 2 minutes per km
         
         # Calculate fare in Kenyan Shillings (KSH)
-        base_fare = 100  # Base fare in KSH
-        per_km_rate = 50  # Rate per kilometer in KSH
+        base_fare = 100  
+        per_km_rate = 50  
         fare = round(base_fare + (distance_km * per_km_rate), 2)
         
     except (TypeError, ValueError) as e:
         print(f"Fare calculation error: {e}")
-        fare = 100  # Default fare in KSH
+        fare = 100 
         distance_km = 0
         duration_min = 0
     
@@ -243,7 +263,7 @@ def request_ride(request):
         )
         
         response_data = RideSerializer(ride).data
-        # Add route information to response
+        
         response_data['distance_km'] = round(distance_km, 2)
         response_data['duration_min'] = round(duration_min, 2)
         if route_info:
@@ -290,7 +310,7 @@ def get_nearby_drivers(request):
     except (TypeError, ValueError):
         return Response({"error": "Invalid coordinates"}, status=400)
     
-    # Get online drivers
+   
     online_drivers = DriverLocation.objects.filter(is_online=True)
     
     nearby_drivers = []
@@ -309,9 +329,13 @@ def available_rides(request):
     if request.user.user_type not in ['driver', 'boda_rider']:
         return Response({"error": "Only drivers can view available rides"}, status=403)
     
+    # Check if driver is approved
+    if not request.user.is_approved:
+        return Response({"error": "Your driver account is pending approval"}, status=403)
+    
     rides = Ride.objects.filter(status='requested')
     
-    # If driver provides location, calculate distance to rides
+    
     driver_lat = request.GET.get('lat')
     driver_lng = request.GET.get('lng')
     
@@ -449,7 +473,7 @@ def ride_detail(request, ride_id):
     except Ride.DoesNotExist:
         return Response({"error": "Ride not found"}, status=404)
 
-# Test endpoint to verify Google Maps API
+
 @api_view(['GET'])
 @permission_classes([permissions.AllowAny])
 def test_google_api(request):
@@ -544,4 +568,345 @@ def get_place_details(request):
             
     except Exception as e:
         print(f"Place details error: {e}")
-        return Response({"error": "Failed to get place details"}, status=400)    
+        return Response({"error": "Failed to get place details"}, status=400)
+
+
+#driver side 
+@api_view(['GET'])
+def driver_dashboard(request):
+    """Driver dashboard with stats and current ride info"""
+    if request.user.user_type not in ['driver', 'boda_rider']:
+        return Response({"error": "Only drivers can access dashboard"}, status=403)
+    
+    # Check if driver is approved
+    if not request.user.is_approved or request.user.approval_status != 'approved':
+        return Response({
+            "error": "Driver account pending approval",
+            "approval_status": request.user.approval_status,
+            "rejection_reason": request.user.rejection_reason
+        }, status=403)
+    
+    # MOVE THESE INSIDE THE APPROVAL CHECK
+    current_ride = Ride.objects.filter(
+        driver=request.user,
+        status__in=['accepted', 'driver_arrived', 'in_progress']
+    ).first()
+    
+    today = timezone.now().date()
+    today_rides = Ride.objects.filter(
+        driver=request.user,
+        created_at__date=today,
+        status='completed'
+    )
+    
+    week_ago = today - timezone.timedelta(days=7)
+    weekly_rides = Ride.objects.filter(
+        driver=request.user,
+        created_at__date__gte=week_ago,
+        status='completed'
+    )
+    
+    # FIX: Safely get or create driver location
+    try:
+        driver_location = DriverLocation.objects.get(driver=request.user)
+        is_online = driver_location.is_online
+        location_data = DriverLocationSerializer(driver_location).data
+    except DriverLocation.DoesNotExist:
+        # Create default driver location if it doesn't exist
+        driver_location = DriverLocation.objects.create(
+            driver=request.user,
+            lat=0.0,
+            lng=0.0,
+            is_online=False
+        )
+        is_online = False
+        location_data = None
+
+    dashboard_data = {
+        'current_ride': RideSerializer(current_ride).data if current_ride else None,
+        'today_stats': {
+            'completed_rides': today_rides.count(),
+            'total_earnings': sum(ride.fare for ride in today_rides if ride.fare),
+        },
+        'weekly_stats': {
+            'completed_rides': weekly_rides.count(),
+            'total_earnings': sum(ride.fare for ride in weekly_rides if ride.fare),
+        },
+        'driver_status': {
+            'is_online': is_online,
+            'current_location': location_data
+        }
+    }
+    
+    return Response(dashboard_data)
+
+@api_view(['POST'])
+def toggle_online_status(request):
+    """Toggle driver's online/offline status"""
+    if request.user.user_type not in ['driver', 'boda_rider']:
+        return Response({"error": "Only drivers can toggle online status"}, status=403)
+    
+    is_online = request.data.get('is_online')
+    
+    if is_online is None:
+        return Response({"error": "is_online field is required"}, status=400)
+    
+    
+    location, created = DriverLocation.objects.update_or_create(
+        driver=request.user,
+        defaults={'is_online': is_online}
+    )
+    
+    return Response({
+        'is_online': location.is_online,
+        'message': f'You are now {"online" if location.is_online else "offline"}'
+    })
+
+@api_view(['POST'])
+def start_ride(request, ride_id):
+    """Driver starts the ride (pick up customer)"""
+    if request.user.user_type not in ['driver', 'boda_rider']:
+        return Response({"error": "Only drivers can start rides"}, status=403)
+    
+    try:
+        ride = Ride.objects.get(id=ride_id, driver=request.user)
+        
+        if ride.status != 'driver_arrived':
+            return Response({"error": "Ride status must be 'driver_arrived' to start"}, status=400)
+        
+        ride.status = 'in_progress'
+        ride.actual_pickup_time = timezone.now()
+        ride.save()
+        
+        #system message
+        RideMessage.objects.create(
+            ride=ride,
+            sender=request.user,
+            message_type='system',
+            content=f'Ride started at {ride.actual_pickup_time.strftime("%H:%M")}'
+        )
+        
+        return Response(RideSerializer(ride).data)
+        
+    except Ride.DoesNotExist:
+        return Response({"error": "Ride not found"}, status=404)
+
+@api_view(['POST'])
+def complete_ride(request, ride_id):
+    """Driver completes the ride"""
+    if request.user.user_type not in ['driver', 'boda_rider']:
+        return Response({"error": "Only drivers can complete rides"}, status=403)
+    
+    try:
+        ride = Ride.objects.get(id=ride_id, driver=request.user)
+        
+        if ride.status != 'in_progress':
+            return Response({"error": "Ride must be in progress to complete"}, status=400)
+        
+        ride.status = 'completed'
+        ride.actual_dropoff_time = timezone.now()
+        ride.save()
+        
+        # Create system message
+        RideMessage.objects.create(
+            ride=ride,
+            sender=request.user,
+            message_type='system',
+            content=f'Ride completed at {ride.actual_dropoff_time.strftime("%H:%M")}'
+        )
+        
+        return Response(RideSerializer(ride).data)
+        
+    except Ride.DoesNotExist:
+        return Response({"error": "Ride not found"}, status=404)
+
+@api_view(['POST'])
+def send_ride_message(request, ride_id):
+    """Send message in ride chat"""
+    try:
+        ride = Ride.objects.get(id=ride_id)
+        
+        
+        if request.user not in [ride.customer, ride.driver]:
+            return Response({"error": "Not authorized to send messages in this ride"}, status=403)
+        
+        content = request.data.get('content')
+        message_type = request.data.get('message_type', 'text')
+        
+        if not content:
+            return Response({"error": "Message content is required"}, status=400)
+        
+        message = RideMessage.objects.create(
+            ride=ride,
+            sender=request.user,
+            message_type=message_type,
+            content=content
+        )
+        
+        return Response(RideMessageSerializer(message).data)
+        
+    except Ride.DoesNotExist:
+        return Response({"error": "Ride not found"}, status=404)
+
+@api_view(['GET'])
+def ride_messages(request, ride_id):
+    """Get all messages for a ride"""
+    try:
+        ride = Ride.objects.get(id=ride_id)
+        
+        
+        if request.user not in [ride.customer, ride.driver]:
+            return Response({"error": "Not authorized to view messages for this ride"}, status=403)
+        
+        messages = RideMessage.objects.filter(ride=ride)
+        serializer = RideMessageSerializer(messages, many=True)
+        
+        return Response(serializer.data)
+        
+    except Ride.DoesNotExist:
+        return Response({"error": "Ride not found"}, status=404)
+
+@api_view(['GET'])
+def driver_earnings(request):
+    """Get driver's earnings breakdown"""
+    if request.user.user_type not in ['driver', 'boda_rider']:
+        return Response({"error": "Only drivers can view earnings"}, status=403)
+    
+    period = request.GET.get('period', 'week')  # week, month, year
+    
+    
+    end_date = timezone.now().date()
+    if period == 'week':
+        start_date = end_date - timezone.timedelta(days=7)
+    elif period == 'month':
+        start_date = end_date - timezone.timedelta(days=30)
+    elif period == 'year':
+        start_date = end_date - timezone.timedelta(days=365)
+    else:
+        start_date = end_date - timezone.timedelta(days=7)
+    
+    completed_rides = Ride.objects.filter(
+        driver=request.user,
+        status='completed',
+        created_at__date__range=[start_date, end_date]
+    )
+    
+    earnings_data = {
+        'period': period,
+        'start_date': start_date,
+        'end_date': end_date,
+        'total_rides': completed_rides.count(),
+        'total_earnings': sum(ride.fare for ride in completed_rides if ride.fare),
+        'average_earnings_per_ride': completed_rides.aggregate(
+            avg_fare=models.Avg('fare')
+        )['avg_fare'] or 0,
+        'rides': RideSerializer(completed_rides, many=True).data
+    }
+    
+    return Response(earnings_data)    
+
+
+# Add admin approval system
+@api_view(['GET'])
+@permission_classes([permissions.IsAdminUser])
+def pending_drivers(request):
+    """Get list of drivers pending approval (Admin only)"""
+    pending_drivers = User.objects.filter(
+        user_type__in=['driver', 'boda_rider'],
+        approval_status='pending',
+        submitted_for_approval=True
+    )
+    
+    drivers_data = []
+    for driver in pending_drivers:
+        try:
+            vehicle = driver.vehicle
+            vehicle_data = {
+                'vehicle_type': vehicle.vehicle_type,
+                'license_plate': vehicle.license_plate,
+                'make': vehicle.make,
+                'model': vehicle.model,
+                'year': vehicle.year,
+                'color': vehicle.color,
+                'vehicle_approval_status': vehicle.vehicle_approval_status,
+            }
+        except:
+            vehicle_data = None
+            
+        drivers_data.append({
+            'user': UserSerializer(driver).data,
+            'vehicle': vehicle_data
+        })
+    
+    return Response(drivers_data)
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAdminUser])
+def approve_driver(request, user_id):
+    """Approve a driver (Admin only)"""
+    try:
+        driver = User.objects.get(
+            id=user_id,
+            user_type__in=['driver', 'boda_rider']
+        )
+        
+        action = request.data.get('action')  # 'approve' or 'reject'
+        reason = request.data.get('reason', '')
+        
+        if action == 'approve':
+            driver.approval_status = 'approved'
+            driver.is_approved = True
+            driver.approval_date = timezone.now()
+            driver.approved_by = request.user
+            
+            # Also approve vehicle
+            try:
+                vehicle = driver.vehicle
+                vehicle.is_approved = True
+                vehicle.vehicle_approval_status = 'approved'
+                vehicle.save()
+            except:
+                pass
+                
+            message = 'Driver approved successfully'
+            
+        elif action == 'reject':
+            driver.approval_status = 'rejected'
+            driver.is_approved = False
+            driver.rejection_reason = reason
+            message = 'Driver rejected'
+            
+        else:
+            return Response({"error": "Action must be 'approve' or 'reject'"}, status=400)
+        
+        driver.save()
+        
+        return Response({
+            "message": message,
+            "driver": UserSerializer(driver).data
+        })
+        
+    except User.DoesNotExist:
+        return Response({"error": "Driver not found"}, status=404)
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAdminUser])
+def suspend_driver(request, user_id):
+    """Suspend a driver (Admin only)"""
+    try:
+        driver = User.objects.get(
+            id=user_id,
+            user_type__in=['driver', 'boda_rider']
+        )
+        
+        driver.approval_status = 'suspended'
+        driver.is_approved = False
+        driver.save()
+        
+        return Response({
+            "message": "Driver suspended successfully",
+            "driver": UserSerializer(driver).data
+        })
+        
+    except User.DoesNotExist:
+        return Response({"error": "Driver not found"}, status=404)

@@ -14,6 +14,12 @@ const Register = () => {
     last_name: '',
     driver_license: '',
     responder_type: '',
+    vehicle_type: '',
+  license_plate: '',
+  make: '',
+  model: '',
+  year: '',
+  color: '',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -26,46 +32,94 @@ const Register = () => {
     });
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+  // In your Register component, update the handleSubmit function:
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setError('');
+  setLoading(true);
 
-    try {
-      await AuthService.register(formData);
-      navigate('/login');
-    } catch (error) {
-      if (typeof error === 'object') {
-        const errorMessages = Object.values(error).flat().join(', ');
-        setError(errorMessages);
-      } else {
-        setError(error.detail || 'Registration failed. Please try again.');
-      }
-    } finally {
-      setLoading(false);
+  try {
+    const result = await AuthService.register(formData);
+    
+    // Show appropriate message based on user type
+    if (formData.user_type === 'driver' || formData.user_type === 'boda_rider') {
+      alert('Driver account submitted for approval. You can login but cannot accept rides until approved.');
     }
-  };
+    
+    navigate('/login');
+  } catch (error) {
+    if (typeof error === 'object') {
+      const errorMessages = Object.values(error).flat().join(', ');
+      setError(errorMessages);
+    } else {
+      setError(error.detail || 'Registration failed. Please try again.');
+    }
+  } finally {
+    setLoading(false);
+  }
+};
 
   const renderDriverFields = () => {
-    if (formData.user_type !== 'driver') return null;
-    
-    return (
-      <div className="animate-fade-in">
-        <label className="block text-sm font-semibold text-white mb-3">
-          Driver License Number
-        </label>
-        <input
-          type="text"
-          name="driver_license"
-          placeholder="Enter your driver license number"
-          value={formData.driver_license}
-          onChange={handleChange}
-          className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 transition-all duration-300 text-white placeholder-white/60 backdrop-blur-sm"
-          required
-        />
+  if (formData.user_type !== 'driver') return null;
+  
+  return (
+    <div className="animate-fade-in space-y-4">
+      <label className="block text-sm font-semibold text-white mb-3">
+        Driver License Number
+      </label>
+      <input
+        type="text"
+        name="driver_license"
+        placeholder="Enter your driver license number"
+        value={formData.driver_license}
+        onChange={handleChange}
+        className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 transition-all duration-300 text-white placeholder-white/60 backdrop-blur-sm"
+        required
+      />
+      
+      {/* Add vehicle fields */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-semibold text-white mb-2">Vehicle Type</label>
+          <select name="vehicle_type" value={formData.vehicle_type} onChange={handleChange} className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-black backdrop-blur-sm" required>
+            <option value="">Select Type</option>
+            <option value="economy">Economy</option>
+            <option value="comfort">Comfort</option>
+            <option value="premium">Premium</option>
+            <option value="xl">XL</option>
+            <option value="boda">Boda</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-white mb-2">License Plate</label>
+          <input type="text" name="license_plate" value={formData.license_plate} onChange={handleChange} placeholder="e.g. KAA 123A" className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white placeholder-white/60 backdrop-blur-sm" required />
+        </div>
       </div>
-    );
-  };
+      
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-semibold text-white mb-2">Make</label>
+          <input type="text" name="make" value={formData.make} onChange={handleChange} placeholder="e.g. Toyota" className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white placeholder-white/60 backdrop-blur-sm" required />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-white mb-2">Model</label>
+          <input type="text" name="model" value={formData.model} onChange={handleChange} placeholder="e.g. Corolla" className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white placeholder-white/60 backdrop-blur-sm" required />
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-semibold text-white mb-2">Year</label>
+          <input type="number" name="year" value={formData.year} onChange={handleChange} placeholder="e.g. 2022" min="2000" max="2024" className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white placeholder-white/60 backdrop-blur-sm" required />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-white mb-2">Color</label>
+          <input type="text" name="color" value={formData.color} onChange={handleChange} placeholder="e.g. White" className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white placeholder-white/60 backdrop-blur-sm" required />
+        </div>
+      </div>
+    </div>
+  );
+};
 
   const renderEmergencyResponderFields = () => {
     if (formData.user_type !== 'emergency_responder') return null;
