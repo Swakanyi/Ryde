@@ -1,4 +1,3 @@
-// components/driver/Earnings.jsx
 import React, { useState, useEffect } from 'react';
 import { 
   DollarSign, 
@@ -48,14 +47,14 @@ const Earnings = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+     
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-white">Earnings</h2>
           <p className="text-white/60">Track your earnings and performance</p>
         </div>
         
-        {/* Period Selector */}
+      
         <div className="flex bg-white/10 rounded-xl p-1 border border-white/20">
           {periods.map((p) => (
             <button
@@ -82,7 +81,7 @@ const Earnings = () => {
 
       {earningsData && (
         <>
-          {/* Summary Cards */}
+         
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20">
               <div className="flex items-center gap-4">
@@ -127,7 +126,7 @@ const Earnings = () => {
             </div>
           </div>
 
-          {/* Period Info */}
+         
           <div className="bg-white/5 rounded-xl p-4 border border-white/10">
             <div className="flex items-center gap-2 text-white/60 text-sm">
               <Calendar className="w-4 h-4" />
@@ -135,7 +134,7 @@ const Earnings = () => {
             </div>
           </div>
 
-          {/* Recent Rides */}
+          
           <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-lg font-semibold text-white">Recent Rides</h3>

@@ -28,10 +28,10 @@ const RequestRide = () => {
     setLoading(true);
 
     try {
-      // For now, using dummy coordinates - we'll add maps later
+      
       const rideData = {
         ...formData,
-        pickup_lat: formData.pickup_lat || 0.3136,  // Default Kampala coordinates
+        pickup_lat: formData.pickup_lat || 0.3136,  
         pickup_lng: formData.pickup_lng || 32.5811,
         dropoff_lat: formData.dropoff_lat || 0.3163,
         dropoff_lng: formData.dropoff_lng || 32.5827,

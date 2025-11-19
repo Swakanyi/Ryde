@@ -36,9 +36,35 @@ urlpatterns = [
     path('rides/<int:ride_id>/complete/', views.complete_ride, name='complete_ride'),
     path('rides/<int:ride_id>/messages/', views.ride_messages, name='ride_messages'),
     path('rides/<int:ride_id>/send-message/', views.send_ride_message, name='send_ride_message'),
+    path('rides/<int:ride_id>/decline/', views.decline_ride, name='decline_ride'),
 
 #admin approval
     path('admin/pending-drivers/', views.pending_drivers, name='pending_drivers'),
     path('admin/drivers/<int:user_id>/approve/', views.approve_driver, name='approve_driver'),
     path('admin/drivers/<int:user_id>/suspend/', views.suspend_driver, name='suspend_driver'),
+
+# Admin Dashboard URLs
+path('admin/stats/', views.admin_dashboard_stats, name='admin_dashboard_stats'),
+path('admin/users/', views.admin_user_management, name='admin_user_management'),
+path('admin/users/<int:user_id>/', views.admin_user_detail, name='admin_user_detail'),
+path('admin/rides/', views.admin_ride_management, name='admin_ride_management'),
+path('admin/rides/<int:ride_id>/', views.admin_ride_detail, name='admin_ride_detail'),
+path('admin/drivers/pending/', views.pending_drivers, name='pending_drivers'),
+path('admin/drivers/<int:user_id>/approve/', views.approve_driver, name='approve_driver'),
+path('admin/drivers/<int:user_id>/suspend/', views.suspend_driver, name='suspend_driver'),
+path('admin/emergency-requests/', views.admin_emergency_requests, name='admin_emergency_requests'),
+path('admin/reports/earnings/', views.admin_earnings_report, name='admin_earnings_report'),
+path('admin/reports/usage/', views.admin_usage_report, name='admin_usage_report'), 
+
+# Notification URLs
+path('admin/notifications/', views.admin_notifications, name='admin_notifications'),
+path('admin/notifications/<int:notification_id>/read/', views.mark_notification_read, name='mark_notification_read'),
+path('admin/notifications/mark-all-read/', views.mark_all_notifications_read, name='mark_all_notifications_read'),
+path('admin/notification-preferences/', views.notification_preferences, name='notification_preferences'),
+path('admin/test-notification/', views.test_notification, name='test_notification'),
+path('admin/drivers/pending-with-documents/', views.pending_drivers_with_documents, name='pending_drivers_with_documents'),
+path('admin/drivers/<int:user_id>/documents/', views.driver_documents, name='driver_documents'),
+path('admin/drivers/<int:user_id>/approve-with-vehicle/', views.approve_driver_with_vehicle, name='approve_driver_with_vehicle'),
+path('admin/drivers/approved/', views.get_approved_drivers, name='get_approved_drivers'),
+
 ]

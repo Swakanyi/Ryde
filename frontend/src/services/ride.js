@@ -1,10 +1,11 @@
 import axios from 'axios';
 import AuthService from './auth';
 
+
 const API_URL = 'http://localhost:8000/api/auth';
 
 class Ride {
-  // Request new ride
+  
   async requestRide(rideData) {
     try {
       const response = await axios.post(`${API_URL}/rides/request/`, rideData, {
@@ -16,18 +17,45 @@ class Ride {
     }
   }
 
-  async geocodeAddress(addressData) {
-  try {
-    const response = await axios.post(`${API_URL}/map/geocode/`, addressData, {
-      headers: AuthService.getAuthHeader()
-    });
-    return response.data;
-  } catch (error) {
-    throw error.response?.data || error;
+ 
+  async getRideMessages(rideId) {
+    try {
+      const response = await axios.get(`${API_URL}/rides/${rideId}/messages/`, {
+        headers: AuthService.getAuthHeader()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching ride messages:', error);
+      return [];
+    }
   }
-}
 
-  // Get available rides (for drivers)
+ 
+  async getRideHistory() {
+    try {
+      const response = await axios.get(`${API_URL}/rides/my-rides/`, {
+        headers: AuthService.getAuthHeader()
+      });
+      console.log('✅ [RideService] Ride history loaded:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching ride history:', error);
+      return [];
+    }
+  }
+
+  async geocodeAddress(addressData) {
+    try {
+      const response = await axios.post(`${API_URL}/map/geocode/`, addressData, {
+        headers: AuthService.getAuthHeader()
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error;
+    }
+  }
+
+  
   async getAvailableRides() {
     try {
       const response = await axios.get(`${API_URL}/rides/available/`, {
@@ -39,10 +67,10 @@ class Ride {
     }
   }
 
-  // Accept a ride (for drivers)
+  
   async acceptRide(rideId) {
     try {
-      const response = await axios.post(`${API_URL}/rides/${rideId}/accept/`, {}, {
+      const response = await axios.post(`${API_URL}/rides/${ride_id}/accept/`, {}, {
         headers: AuthService.getAuthHeader()
       });
       return response.data;
@@ -51,7 +79,6 @@ class Ride {
     }
   }
 
-  // Update ride status
   async updateRideStatus(rideId, status) {
     try {
       const response = await axios.post(`${API_URL}/rides/${rideId}/status/`, 
@@ -64,7 +91,7 @@ class Ride {
     }
   }
 
-  // Get user's ride history
+ 
   async getUserRides() {
     try {
       const response = await axios.get(`${API_URL}/rides/my-rides/`, {
@@ -76,7 +103,7 @@ class Ride {
     }
   }
 
-  // ride details
+ 
   async getRideDetail(rideId) {
     try {
       const response = await axios.get(`${API_URL}/rides/${rideId}/`, {
@@ -88,7 +115,7 @@ class Ride {
     }
   }
 
-  //  driver location
+  
   async updateDriverLocation(locationData) {
     try {
       const response = await axios.post(`${API_URL}/driver/location/`, locationData, {
@@ -100,31 +127,56 @@ class Ride {
     }
   }
 
-  // address suggestions
-async autocompleteAddress(query) {
-  try {
-    const response = await axios.post(`${API_URL}/autocomplete/`, { query }, {
-      headers: AuthService.getAuthHeader()
-    });
-    return response.data.suggestions;
-  } catch (error) {
-    console.error('Autocomplete error:', error);
-    return [];
+  async autocompleteAddress(query) {
+    try {
+      const response = await axios.post(`${API_URL}/autocomplete/`, { query }, {
+        headers: AuthService.getAuthHeader()
+      });
+      return response.data.suggestions;
+    } catch (error) {
+      console.error('Autocomplete error:', error);
+      return [];
+    }
   }
-}
 
-
-async getPlaceDetails(placeId) {
-  try {
-    const response = await axios.post(`${API_URL}/place-details/`, { place_id: placeId }, {
-      headers: AuthService.getAuthHeader()
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Place details error:', error);
-    throw error.response?.data || error;
+  async getPlaceDetails(placeId) {
+    try {
+      const response = await axios.post(`${API_URL}/place-details/`, { place_id: placeId }, {
+        headers: AuthService.getAuthHeader()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Place details error:', error);
+      throw error.response?.data || error;
+    }
   }
-}
+
+  async getDriverInfo(driverId) {
+    try {
+      const response = await axios.get(`${API_URL}/driver/${driverId}/info/`, {
+        headers: AuthService.getAuthHeader()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching driver info:', error);
+      throw error.response?.data || error;
+    }
+  }
+
+  async sendChatMessage(rideId, message) {
+    try {
+      const response = await axios.post(`${API_URL}/rides/${rideId}/send-message/`, {
+        content: message,
+        message_type: 'text'
+      }, {
+        headers: AuthService.getAuthHeader()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error sending chat message:', error);
+      throw error.response?.data || error;
+    }
+  }
 }
 
 export default new Ride();

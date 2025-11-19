@@ -5,13 +5,13 @@ from .models import User, UserProfile, Vehicle, Ride, EmergencyRequest, DriverLo
 
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
-    # Remove ordering that references username
-    ordering = ('email',)  # Use email instead of username
+    
+    ordering = ('email',)  
     
     list_display = ('email', 'first_name', 'last_name', 'user_type', 'is_verified', 'is_staff', 'approval_status', 'is_approved')
     list_filter = ('user_type', 'is_verified', 'is_staff', 'approval_status')
     
-    # ✅ ADD CUSTOM ACTIONS FOR DRIVER APPROVAL
+    
     actions = ['approve_drivers', 'reject_drivers']
     
     def approve_drivers(self, request, queryset):
@@ -22,7 +22,7 @@ class CustomUserAdmin(UserAdmin):
             driver.approval_date = timezone.now()
             driver.save()
             
-            # Approve their vehicle too
+            
             try:
                 vehicle = driver.vehicle
                 vehicle.vehicle_approval_status = 'approved'
@@ -44,7 +44,7 @@ class CustomUserAdmin(UserAdmin):
         self.message_user(request, f"❌ {drivers.count()} driver(s) rejected!")
     reject_drivers.short_description = "❌ Reject selected drivers"
 
-    # Define custom fieldsets without username
+   
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
         ('Personal info', {'fields': ('first_name', 'last_name')}),
@@ -59,7 +59,7 @@ class CustomUserAdmin(UserAdmin):
         }),
     )
     
-    # Add fieldsets for creating users
+    
     add_fieldsets = (
         (None, {
             'classes': ('wide',),
@@ -78,7 +78,7 @@ class VehicleAdmin(admin.ModelAdmin):
     list_filter = ('vehicle_type', 'is_approved', 'vehicle_approval_status')
     search_fields = ('driver__email', 'license_plate')
     
-    # ✅ ADD VEHICLE APPROVAL ACTIONS
+    
     actions = ['approve_vehicles', 'reject_vehicles']
     
     def approve_vehicles(self, request, queryset):

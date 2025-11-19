@@ -23,7 +23,6 @@ class CustomUserManager(BaseUserManager):
         return self.create_user(email, password, **extra_fields)
 
 class User(AbstractUser):
-    
     username = None
     email = models.EmailField(unique=True)
     
@@ -42,6 +41,24 @@ class User(AbstractUser):
     
     # Driver/Boda 
     driver_license = models.CharField(max_length=50, blank=True, null=True)
+    driver_license_file = models.FileField(
+        upload_to='driver_documents/licenses/', 
+        null=True, 
+        blank=True,
+        help_text="Upload a clear photo of your valid driving license"
+    )
+    national_id_file = models.FileField(
+        upload_to='driver_documents/national_ids/', 
+        null=True, 
+        blank=True,
+        help_text="Upload a clear photo of your national ID"
+    )
+    logbook_file = models.FileField(
+        upload_to='driver_documents/logbooks/', 
+        null=True, 
+        blank=True,
+        help_text="Upload a clear photo of your vehicle logbook"
+    )
     license_expiry = models.DateField(null=True, blank=True)
     is_approved = models.BooleanField(default=False)
     approval_status = models.CharField(
@@ -79,7 +96,6 @@ class User(AbstractUser):
         null=True
     )
     organization = models.CharField(max_length=100, blank=True, null=True)
-    
     
     objects = CustomUserManager()
     USERNAME_FIELD = 'email'
@@ -136,6 +152,14 @@ class Ride(models.Model):
         ('completed', 'Completed'),
         ('cancelled', 'Cancelled'),
     ]
+
+    VEHICLE_TYPES = [
+        ('economy', 'Economy'),
+        ('comfort', 'Comfort'),
+        ('premium', 'Premium'),
+        ('xl', 'XL'),
+        ('boda', 'Boda'),
+    ]
     
     customer = models.ForeignKey(
         User, 
@@ -151,6 +175,12 @@ class Ride(models.Model):
         related_name='driver_rides', 
         limit_choices_to={'user_type__in': ['driver', 'boda_rider']}
     )
+
+    vehicle_type = models.CharField(
+        max_length=20, 
+        choices=VEHICLE_TYPES, 
+        default='economy')
+    
     pickup_lat = models.FloatField()
     pickup_lng = models.FloatField()
     dropoff_lat = models.FloatField()
@@ -233,4 +263,138 @@ class RideRating(models.Model):
     ride = models.OneToOneField(Ride, on_delete=models.CASCADE, related_name='rating')
     rating = models.IntegerField(choices=[(i, i) for i in range(1, 6)])  # 1-5 stars
     comment = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)     
+    created_at = models.DateTimeField(auto_now_add=True)  
+
+
+class CustomerPaymentMethod(models.Model):
+    PAYMENT_TYPES = [
+        ('mpesa', 'M-Pesa'),
+        ('visa', 'Visa/MasterCard'),
+    ]
+    
+    customer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='payment_methods')
+    payment_type = models.CharField(max_length=10, choices=PAYMENT_TYPES)
+    mpesa_number = models.CharField(max_length=15, blank=True, null=True)
+    card_number = models.CharField(max_length=16, blank=True, null=True)
+    expiry_date = models.CharField(max_length=5, blank=True, null=True)  # MM/YY format
+    cvv = models.CharField(max_length=3, blank=True, null=True)
+    card_holder = models.CharField(max_length=100, blank=True, null=True)
+    is_default = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-is_default', '-created_at']
+
+    def __str__(self):
+        return f"{self.customer.email} - {self.payment_type}"
+
+class CustomerChatHistory(models.Model):
+    customer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='chat_history')
+    ride = models.ForeignKey(Ride, on_delete=models.CASCADE, related_name='chat_history')
+    driver = models.ForeignKey(User, on_delete=models.CASCADE, related_name='driver_chats')
+    last_message = models.TextField()
+    last_message_time = models.DateTimeField(auto_now=True)
+    unread_count = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-last_message_time']
+        unique_together = ['customer', 'ride']
+
+    def __str__(self):
+        return f"Chat: {self.customer.email} - {self.driver.email}" 
+
+
+class AdminNotification(models.Model):
+    NOTIFICATION_TYPES = [
+        ('new_driver', 'New Driver Registration'),
+        ('new_emergency', 'New Emergency Request'),
+        ('ride_issue', 'Ride Issue Reported'),
+        ('system_alert', 'System Alert'),
+        ('payment_issue', 'Payment Issue'),
+        ('driver_suspended', 'Driver Suspended'),
+    ]
+    
+    PRIORITY_LEVELS = [
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+        ('critical', 'Critical'),
+    ]
+    
+    notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES)
+    title = models.CharField(max_length=200)
+    message = models.TextField()
+    priority = models.CharField(max_length=10, choices=PRIORITY_LEVELS, default='medium')
+    
+    # Related objects (optional)
+    related_user = models.ForeignKey(
+        User, 
+        on_delete=models.CASCADE, 
+        null=True, 
+        blank=True,
+        related_name='admin_notifications'
+    )
+    related_ride = models.ForeignKey(
+        Ride, 
+        on_delete=models.CASCADE, 
+        null=True, 
+        blank=True
+    )
+    related_emergency_request = models.ForeignKey(
+        EmergencyRequest, 
+        on_delete=models.CASCADE, 
+        null=True, 
+        blank=True
+    )
+    
+    # Notification status
+    is_read = models.BooleanField(default=False)
+    created_by = models.ForeignKey(
+        User, 
+        on_delete=models.CASCADE, 
+        limit_choices_to={'is_staff': True}
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['is_read', 'created_at']),
+            models.Index(fields=['notification_type', 'created_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.get_notification_type_display()}: {self.title}"
+
+class NotificationPreference(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='notification_preferences')
+    
+   
+    receive_new_driver_notifications = models.BooleanField(default=True)
+    receive_emergency_notifications = models.BooleanField(default=True)
+    receive_ride_issue_notifications = models.BooleanField(default=True)
+    receive_system_alerts = models.BooleanField(default=True)
+    receive_payment_issues = models.BooleanField(default=True)
+    
+   
+    email_notifications = models.BooleanField(default=True)
+    push_notifications = models.BooleanField(default=True)
+    in_app_notifications = models.BooleanField(default=True)
+    
+   
+    minimum_priority = models.CharField(
+        max_length=10, 
+        choices=AdminNotification.PRIORITY_LEVELS, 
+        default='medium'
+    )
+    
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"Notification preferences for {self.user.email}"  
+
+
+

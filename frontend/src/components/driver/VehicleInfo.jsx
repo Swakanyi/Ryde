@@ -15,9 +15,9 @@ const VehicleInfo = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // This would typically come from your API
+ 
   useEffect(() => {
-    // Simulate API call
+
     setTimeout(() => {
       setVehicleData({
         license_plate: 'KCA 123A',
@@ -72,13 +72,13 @@ const VehicleInfo = () => {
     );
   }
 
-  // Get approval status outside of JSX
+ 
   const approvalStatus = vehicleData ? getApprovalStatus(vehicleData.vehicle_approval_status) : getApprovalStatus('unknown');
   const StatusIcon = approvalStatus.icon;
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+   
       <div className="flex justify-between items-start">
         <div>
           <h2 className="text-2xl font-bold text-white">Vehicle Information</h2>
@@ -99,7 +99,7 @@ const VehicleInfo = () => {
 
       {vehicleData && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Vehicle Details */}
+          
           <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20">
             <h3 className="text-lg font-semibold text-white mb-6 flex items-center gap-2">
               <Car className="w-5 h-5 text-emerald-400" />
@@ -130,9 +130,9 @@ const VehicleInfo = () => {
             </div>
           </div>
 
-          {/* Documents & Status */}
+          
           <div className="space-y-6">
-            {/* Approval Status */}
+            
             <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20">
               <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                 <Shield className="w-5 h-5 text-emerald-400" />
@@ -153,7 +153,7 @@ const VehicleInfo = () => {
               )}
             </div>
 
-            {/* Insurance Information */}
+          
             <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20">
               <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                 <FileCheck className="w-5 h-5 text-blue-400" />
@@ -189,7 +189,7 @@ const VehicleInfo = () => {
         </div>
       )}
 
-      {/* Action Buttons */}
+      
       <div className="flex flex-col sm:flex-row gap-4 pt-4">
         <button className="flex-1 bg-emerald-500 text-white py-3 px-6 rounded-xl hover:bg-emerald-600 transition-colors font-semibold">
           Update Documents

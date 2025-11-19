@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import AuthService from '../services/auth';
-import { Shield, Car, Bike, Ambulance, UserPlus, ArrowRight, CheckCircle } from 'lucide-react';
+import { 
+  Shield, Car, Bike, Ambulance, UserPlus, ArrowRight, CheckCircle, 
+  Upload, FileText, IdCard, FileCheck 
+} from 'lucide-react';
 
 const Register = () => {
   const [formData, setFormData] = useState({
@@ -14,13 +17,10 @@ const Register = () => {
     last_name: '',
     driver_license: '',
     responder_type: '',
-    vehicle_type: '',
-  license_plate: '',
-  make: '',
-  model: '',
-  year: '',
-  color: '',
   });
+  const [driverLicenseFile, setDriverLicenseFile] = useState(null);
+  const [nationalIdFile, setNationalIdFile] = useState(null);
+  const [logbookFile, setLogbookFile] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -32,94 +32,264 @@ const Register = () => {
     });
   };
 
-  // In your Register component, update the handleSubmit function:
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setError('');
-  setLoading(true);
+  const handleFileChange = (e, fileType) => {
+    const file = e.target.files[0];
+    if (file) {
+     
+      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
+      if (!validTypes.includes(file.type)) {
+        setError('Please upload JPG, PNG, or PDF files only');
+        return;
+      }
 
-  try {
-    const result = await AuthService.register(formData);
-    
-    // Show appropriate message based on user type
-    if (formData.user_type === 'driver' || formData.user_type === 'boda_rider') {
-      alert('Driver account submitted for approval. You can login but cannot accept rides until approved.');
+     
+      if (file.size > 5 * 1024 * 1024) {
+        setError('File size too large. Maximum size is 5MB');
+        return;
+      }
+
+      switch (fileType) {
+        case 'license':
+          setDriverLicenseFile(file);
+          break;
+        case 'nationalId':
+          setNationalIdFile(file);
+          break;
+        case 'logbook':
+          setLogbookFile(file);
+          break;
+      }
+      setError('');
     }
-    
-    navigate('/login');
-  } catch (error) {
-    if (typeof error === 'object') {
-      const errorMessages = Object.values(error).flat().join(', ');
-      setError(errorMessages);
-    } else {
-      setError(error.detail || 'Registration failed. Please try again.');
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      
+      let submitData = {
+        email: formData.email,
+        password: formData.password,
+        password2: formData.password2,
+        user_type: formData.user_type,
+        phone_number: formData.phone_number,
+        first_name: formData.first_name,
+        last_name: formData.last_name,
+      };
+
+      
+      if (formData.user_type === 'driver' || formData.user_type === 'boda_rider') {
+        submitData = {
+          ...submitData,
+          driver_license: formData.driver_license,
+        };
+
+        
+        const formDataObj = new FormData();
+        
+        
+        Object.keys(submitData).forEach(key => {
+          formDataObj.append(key, submitData[key]);
+        });
+
+        
+        if (driverLicenseFile) {
+          formDataObj.append('driver_license_file', driverLicenseFile);
+        }
+        if (nationalIdFile) {
+          formDataObj.append('national_id_file', nationalIdFile);
+        }
+        if (logbookFile) {
+          formDataObj.append('logbook_file', logbookFile);
+        }
+
+        console.log('🟡 [Registration] Sending driver registration with documents');
+
+        
+        const result = await AuthService.registerWithFiles(formDataObj);
+        
+        alert('Driver account submitted for approval. You can login but cannot accept rides until approved.');
+        navigate('/login');
+        return;
+      }
+
+      
+      if (formData.user_type === 'emergency_responder') {
+        submitData = {
+          ...submitData,
+          responder_type: formData.responder_type,
+        };
+      }
+
+      console.log('🟡 [Registration] Sending data:', submitData);
+
+      const result = await AuthService.register(submitData);
+      
+      navigate('/login');
+    } catch (error) {
+      console.error('❌ [Registration] Error:', error);
+      if (typeof error === 'object') {
+        const errorMessages = Object.values(error).flat().join(', ');
+        setError(errorMessages);
+      } else {
+        setError(error.detail || 'Registration failed. Please try again.');
+      }
+    } finally {
+      setLoading(false);
     }
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const renderDriverFields = () => {
-  if (formData.user_type !== 'driver') return null;
-  
-  return (
-    <div className="animate-fade-in space-y-4">
-      <label className="block text-sm font-semibold text-white mb-3">
-        Driver License Number
-      </label>
-      <input
-        type="text"
-        name="driver_license"
-        placeholder="Enter your driver license number"
-        value={formData.driver_license}
-        onChange={handleChange}
-        className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 transition-all duration-300 text-white placeholder-white/60 backdrop-blur-sm"
-        required
-      />
-      
-      {/* Add vehicle fields */}
-      <div className="grid grid-cols-2 gap-4">
+    if (formData.user_type !== 'driver' && formData.user_type !== 'boda_rider') return null;
+    
+    return (
+      <div className="animate-fade-in space-y-6">
         <div>
-          <label className="block text-sm font-semibold text-white mb-2">Vehicle Type</label>
-          <select name="vehicle_type" value={formData.vehicle_type} onChange={handleChange} className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-black backdrop-blur-sm" required>
-            <option value="">Select Type</option>
-            <option value="economy">Economy</option>
-            <option value="comfort">Comfort</option>
-            <option value="premium">Premium</option>
-            <option value="xl">XL</option>
-            <option value="boda">Boda</option>
-          </select>
+          <label className="block text-sm font-semibold text-white mb-3">
+            Driver License Number
+          </label>
+          <input
+            type="text"
+            name="driver_license"
+            placeholder="Enter your driver license number"
+            value={formData.driver_license}
+            onChange={handleChange}
+            className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 transition-all duration-300 text-white placeholder-white/60 backdrop-blur-sm"
+            required
+          />
         </div>
+
+        
         <div>
-          <label className="block text-sm font-semibold text-white mb-2">License Plate</label>
-          <input type="text" name="license_plate" value={formData.license_plate} onChange={handleChange} placeholder="e.g. KAA 123A" className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white placeholder-white/60 backdrop-blur-sm" required />
+          <label className="block text-sm font-semibold text-white mb-3">
+            Upload Valid Driving License
+          </label>
+          <div className="border-2 border-dashed border-white/30 rounded-xl p-6 text-center hover:border-emerald-400 transition-all duration-300">
+            <input
+              type="file"
+              id="license-upload"
+              accept=".jpg,.jpeg,.png,.pdf"
+              onChange={(e) => handleFileChange(e, 'license')}
+              className="hidden"
+            />
+            <label htmlFor="license-upload" className="cursor-pointer">
+              {driverLicenseFile ? (
+                <div className="flex items-center justify-center gap-3 text-emerald-300">
+                  <FileCheck className="w-6 h-6" />
+                  <div className="text-left">
+                    <p className="font-semibold">{driverLicenseFile.name}</p>
+                    <p className="text-sm text-white/70">Click to change file</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-2">
+                  <IdCard className="w-8 h-8 text-white/60" />
+                  <p className="text-white font-semibold">Upload Driving License</p>
+                  <p className="text-white/60 text-sm">JPG, PNG or PDF (Max 5MB)</p>
+                </div>
+              )}
+            </label>
+          </div>
+        </div>
+
+       
+        <div>
+          <label className="block text-sm font-semibold text-white mb-3">
+            Upload National ID
+          </label>
+          <div className="border-2 border-dashed border-white/30 rounded-xl p-6 text-center hover:border-emerald-400 transition-all duration-300">
+            <input
+              type="file"
+              id="national-id-upload"
+              accept=".jpg,.jpeg,.png,.pdf"
+              onChange={(e) => handleFileChange(e, 'nationalId')}
+              className="hidden"
+            />
+            <label htmlFor="national-id-upload" className="cursor-pointer">
+              {nationalIdFile ? (
+                <div className="flex items-center justify-center gap-3 text-emerald-300">
+                  <FileCheck className="w-6 h-6" />
+                  <div className="text-left">
+                    <p className="font-semibold">{nationalIdFile.name}</p>
+                    <p className="text-sm text-white/70">Click to change file</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-2">
+                  <IdCard className="w-8 h-8 text-white/60" />
+                  <p className="text-white font-semibold">Upload National ID</p>
+                  <p className="text-white/60 text-sm">JPG, PNG or PDF (Max 5MB)</p>
+                </div>
+              )}
+            </label>
+          </div>
+        </div>
+
+        
+        <div>
+          <label className="block text-sm font-semibold text-white mb-3">
+            Upload Vehicle Logbook
+          </label>
+          <div className="border-2 border-dashed border-white/30 rounded-xl p-6 text-center hover:border-emerald-400 transition-all duration-300">
+            <input
+              type="file"
+              id="logbook-upload"
+              accept=".jpg,.jpeg,.png,.pdf"
+              onChange={(e) => handleFileChange(e, 'logbook')}
+              className="hidden"
+            />
+            <label htmlFor="logbook-upload" className="cursor-pointer">
+              {logbookFile ? (
+                <div className="flex items-center justify-center gap-3 text-emerald-300">
+                  <FileCheck className="w-6 h-6" />
+                  <div className="text-left">
+                    <p className="font-semibold">{logbookFile.name}</p>
+                    <p className="text-sm text-white/70">Click to change file</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-2">
+                  <FileText className="w-8 h-8 text-white/60" />
+                  <p className="text-white font-semibold">Upload Vehicle Logbook</p>
+                  <p className="text-white/60 text-sm">JPG, PNG or PDF (Max 5MB)</p>
+                </div>
+              )}
+            </label>
+          </div>
+        </div>
+
+        
+        <div className="bg-blue-500/20 border border-blue-500/30 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <Shield className="w-5 h-5 text-blue-300 mt-0.5" />
+            <div>
+              <p className="text-blue-300 font-semibold text-sm mb-2">Required Documents</p>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${driverLicenseFile ? 'bg-emerald-400' : 'bg-amber-400'}`}></div>
+                  <span className="text-white/80">Valid Driving License</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${nationalIdFile ? 'bg-emerald-400' : 'bg-amber-400'}`}></div>
+                  <span className="text-white/80">National ID</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${logbookFile ? 'bg-emerald-400' : 'bg-amber-400'}`}></div>
+                  <span className="text-white/80">Vehicle Logbook</span>
+                </div>
+              </div>
+              <p className="text-white/60 text-xs mt-3">
+                All documents will be verified by our admin team. Vehicle details will be assigned during approval.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
-      
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-semibold text-white mb-2">Make</label>
-          <input type="text" name="make" value={formData.make} onChange={handleChange} placeholder="e.g. Toyota" className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white placeholder-white/60 backdrop-blur-sm" required />
-        </div>
-        <div>
-          <label className="block text-sm font-semibold text-white mb-2">Model</label>
-          <input type="text" name="model" value={formData.model} onChange={handleChange} placeholder="e.g. Corolla" className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white placeholder-white/60 backdrop-blur-sm" required />
-        </div>
-      </div>
-      
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-semibold text-white mb-2">Year</label>
-          <input type="number" name="year" value={formData.year} onChange={handleChange} placeholder="e.g. 2022" min="2000" max="2024" className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white placeholder-white/60 backdrop-blur-sm" required />
-        </div>
-        <div>
-          <label className="block text-sm font-semibold text-white mb-2">Color</label>
-          <input type="text" name="color" value={formData.color} onChange={handleChange} placeholder="e.g. White" className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl text-white placeholder-white/60 backdrop-blur-sm" required />
-        </div>
-      </div>
-    </div>
-  );
-};
+    );
+  };
 
   const renderEmergencyResponderFields = () => {
     if (formData.user_type !== 'emergency_responder') return null;
@@ -141,15 +311,19 @@ const handleSubmit = async (e) => {
           <option value="tow_truck" className="text-gray-800">Tow Truck</option>
           <option value="police" className="text-gray-800">Police</option>
           <option value="fire" className="text-gray-800">Fire Department</option>
-          <option value="boda_emergency" className="text-gray-800">Boda Emergency</option>
         </select>
       </div>
     );
   };
 
+  
+  const hasAllDriverDocuments = formData.user_type !== 'driver' && formData.user_type !== 'boda_rider' || 
+    (driverLicenseFile && nationalIdFile && logbookFile);
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4 overflow-hidden relative">
       
+     
       <div 
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
         style={{
@@ -159,7 +333,7 @@ const handleSubmit = async (e) => {
         <div className="absolute inset-0 bg-gradient-to-br from-gray-900/90 via-emerald-900/80 to-gray-900/90"></div>
       </div>
 
-      
+    
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute top-1/4 left-1/4 w-32 h-32 bg-emerald-400/20 rounded-full blur-xl animate-float"></div>
         <div className="absolute top-1/3 right-1/4 w-24 h-24 bg-yellow-400/20 rounded-full blur-xl animate-float animation-delay-2000"></div>
@@ -169,15 +343,16 @@ const handleSubmit = async (e) => {
 
       <div className="flex w-full max-w-6xl rounded-3xl overflow-hidden relative z-10">
         
+       
         <div className="hidden lg:flex lg:w-2/5 p-12 text-white flex-col justify-between relative overflow-hidden">
           <div className="absolute inset-0 bg-white/10 backdrop-blur-xl border-r border-white/20"></div>
           <div className="relative z-10">
             <div className="flex items-center gap-3 mb-8">
               <div className="w-10 h-10 bg-gradient-to-br from-emerald-600 to-yellow-500 rounded-xl flex items-center justify-center shadow-lg transform rotate-12">
-                              <Car className="w-6 h-6 text-white -rotate-12" />
-                            </div>
+                <Car className="w-6 h-6 text-white -rotate-12" />
+              </div>
               <Link to='/homepage'>
-              <h1 className="text-2xl font-bold hover:text-emerald-600" >Ryde</h1>
+                <h1 className="text-2xl font-bold hover:text-emerald-600">Ryde</h1>
               </Link>
             </div>
             
@@ -354,7 +529,7 @@ const handleSubmit = async (e) => {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || (formData.user_type !== 'customer' && formData.user_type !== 'emergency_responder' && !hasAllDriverDocuments)}
                 className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 text-white py-4 px-6 rounded-xl hover:from-emerald-600 hover:to-emerald-700 focus:ring-4 focus:ring-emerald-400/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 font-semibold transform hover:scale-105 shadow-lg border border-emerald-400/30"
               >
                 {loading ? (
@@ -384,6 +559,5 @@ const handleSubmit = async (e) => {
     </div>
   );
 };
-
 
 export default Register;

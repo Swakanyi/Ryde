@@ -3,11 +3,11 @@ import axios from 'axios';
 const API_URL = 'http://localhost:8000/api/auth';
 
 const api = axios.create({
-    baseURL: API_URL,
+  baseURL: API_URL,
 });
 
 class AuthService {
-  // Register 
+ 
   async register(userData) {
     try {
       const response = await api.post('/register/', userData);
@@ -21,7 +21,7 @@ class AuthService {
     }
   }
 
-  // Login 
+
   async login(credentials) {
     try {
       const response = await api.post('/login/', credentials);
@@ -35,65 +35,135 @@ class AuthService {
     }
   }
 
-  // Logout user
+  
   logout() {
-    const refresh_token = localStorage.getItem('refresh_token');
+    const refresh_token = this.getRefreshToken();
     if (refresh_token) {
-      api.post('/logout/', { refresh: refresh_token });
+      api.post('/logout/', { refresh: refresh_token }).catch(() => {});
     }
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('user');
+    this.clearStorage();
   }
 
   
   getCurrentUser() {
-    const user = localStorage.getItem('user');
+    const user = sessionStorage.getItem('user');  
     return user ? JSON.parse(user) : null;
   }
 
+  setUser(user) {
+  if (!user) return;
   
+ 
+  sessionStorage.setItem('user', JSON.stringify(user));
+  
+ 
+  sessionStorage.setItem('user_type', user.user_type || '');
+  sessionStorage.setItem('user_id', user.id || user.user_id || '');
+  sessionStorage.setItem('user_name', `${user.first_name || ''} ${user.last_name || ''}`.trim());
+  sessionStorage.setItem('is_staff', user.is_staff ? 'true' : 'false');
+  sessionStorage.setItem('is_superuser', user.is_superuser ? 'true' : 'false');
+  
+  console.log('🔐 [AuthService] User data stored:', {
+    user_type: user.user_type,
+    is_staff: user.is_staff,
+    is_superuser: user.is_superuser
+  });
+}
+
+  
+  setTokens({ access, refresh }) {
+    sessionStorage.setItem('access_token', access);    
+    sessionStorage.setItem('refresh_token', refresh);  
+  }
+
+  getAccessToken() {
+    return sessionStorage.getItem('access_token');     
+  }
+
+  getRefreshToken() {
+    return sessionStorage.getItem('refresh_token');   
+  }
+
   getAuthHeader() {
     const token = this.getAccessToken();
-    return token ? { 'Authorization': `Bearer ${token}` } : {};
+    return token ? { Authorization: `Bearer ${token}` } : {};
   }
 
- 
-  getAccessToken() {
-    return localStorage.getItem('access_token');
-  }
-
- 
-  setTokens(data) {
-    localStorage.setItem('access_token', data.access);
-    localStorage.setItem('refresh_token', data.refresh);
-  }
-
-  
-  setUser(user) {
-    localStorage.setItem('user', JSON.stringify(user));
-  }
-
- 
   isAuthenticated() {
     return !!this.getAccessToken();
   }
 
- 
   async refreshToken() {
-    try {
-      const refresh_token = localStorage.getItem('refresh_token');
-      if (refresh_token) {
-        const response = await api.post('/token/refresh/', {
-          refresh: refresh_token
-        });
-        localStorage.setItem('access_token', response.data.access);
-        return response.data.access;
-      }
-    } catch (error) {
-      this.logout();
-      throw error;
+  const refresh_token = this.getRefreshToken();
+  if (!refresh_token) {
+    this.logout();
+    return null;
+  }
+
+  try {
+    const response = await api.post('/token/refresh/', { refresh: refresh_token });
+    const { access } = response.data;
+    sessionStorage.setItem('access_token', access);  
+    return access;
+  } catch (error) {
+    this.logout();
+    throw error;
+  }
+}
+
+ 
+async verifyToken() {
+  try {
+    const token = this.getAccessToken();
+    if (!token) return false;
+    
+    
+    const tokenParts = token.split('.');
+    if (tokenParts.length !== 3) {
+      this.clearStorage();
+      return false;
     }
+    
+    return true;
+  } catch (error) {
+    this.clearStorage();
+    return false;
+  }
+}
+
+
+
+async registerWithFiles(formData) {
+  try {
+    const response = await axios.post(`${API_URL}/register/`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      }
+    });
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || error;
+  }
+}
+
+
+getAuthHeader() {
+  const token = this.getAccessToken();
+  return token ? { 
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  } : {};
+}
+
+  clearStorage() {
+    sessionStorage.removeItem('access_token');     
+    sessionStorage.removeItem('refresh_token');    
+    sessionStorage.removeItem('user');            
+    sessionStorage.removeItem('user_type');        
+    sessionStorage.removeItem('user_id');          
+    sessionStorage.removeItem('user_name');
+    sessionStorage.removeItem('is_staff');
+    sessionStorage.removeItem('is_superuser');        
   }
 }
 

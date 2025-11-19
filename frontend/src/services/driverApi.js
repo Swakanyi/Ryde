@@ -5,7 +5,7 @@ import AuthService from './auth';
 const API_URL = 'http://localhost:8000/api/auth';
 
 class DriverService {
-  // Get driver dashboard data
+  
   async getDashboard() {
     try {
       const response = await axios.get(`${API_URL}/driver/dashboard/`, {
@@ -17,20 +17,20 @@ class DriverService {
     }
   }
 
-  // Toggle online/offline status
-  async toggleOnlineStatus(isOnline) {
-    try {
-      const response = await axios.post(`${API_URL}/driver/toggle-online/`, 
-        { is_online: isOnline },
-        { headers: AuthService.getAuthHeader() }
-      );
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || error;
-    }
+ 
+  async toggleOnlineStatus(data) {
+  try {
+    const response = await axios.post(`${API_URL}/driver/toggle-online/`, 
+      data,  
+      { headers: AuthService.getAuthHeader() }
+    );
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || error;
   }
+}
 
-  // Get available rides
+ 
   async getAvailableRides() {
     try {
       const response = await axios.get(`${API_URL}/rides/available/`, {
@@ -42,7 +42,7 @@ class DriverService {
     }
   }
 
-  // Accept a ride
+ 
   async acceptRide(rideId) {
     try {
       const response = await axios.post(`${API_URL}/rides/${rideId}/accept/`, {}, {
@@ -54,8 +54,21 @@ class DriverService {
     }
   }
 
-  // Start a ride (driver picks up customer)
-  async startRide(rideId) {
+
+async declineRide(rideId) {
+  try {
+    const response = await axios.post(`${API_URL}/rides/${rideId}/decline/`, {}, {
+      headers: AuthService.getAuthHeader()
+    });
+    return response.data;
+  } catch (error) {
+    console.error('❌ [DriverService] Decline ride error:', error.response?.data || error.message);
+    throw error.response?.data || error;
+  }
+}
+
+
+async startRide(rideId) {
     try {
       const response = await axios.post(`${API_URL}/rides/${rideId}/start/`, {}, {
         headers: AuthService.getAuthHeader()
@@ -66,7 +79,7 @@ class DriverService {
     }
   }
 
-  // Complete a ride
+  
   async completeRide(rideId) {
     try {
       const response = await axios.post(`${API_URL}/rides/${rideId}/complete/`, {}, {
@@ -78,7 +91,7 @@ class DriverService {
     }
   }
 
-  // Update ride status
+  
   async updateRideStatus(rideId, status) {
     try {
       const response = await axios.post(`${API_URL}/rides/${rideId}/status/`, 
@@ -91,7 +104,7 @@ class DriverService {
     }
   }
 
-  // Update driver location
+
   async updateDriverLocation(locationData) {
     try {
       const response = await axios.post(`${API_URL}/driver/location/`, locationData, {
@@ -103,7 +116,7 @@ class DriverService {
     }
   }
 
-  // Get driver earnings
+ 
   async getEarnings(period = 'week') {
     try {
       const response = await axios.get(`${API_URL}/driver/earnings/?period=${period}`, {
@@ -115,7 +128,7 @@ class DriverService {
     }
   }
 
-  // Get ride messages
+ 
   async getRideMessages(rideId) {
     try {
       const response = await axios.get(`${API_URL}/rides/${rideId}/messages/`, {
@@ -127,7 +140,7 @@ class DriverService {
     }
   }
 
-  // Send ride message
+ 
   async sendRideMessage(rideId, content) {
     try {
       const response = await axios.post(`${API_URL}/rides/${rideId}/send-message/`, 
@@ -140,7 +153,7 @@ class DriverService {
     }
   }
 
-  // Get user's ride history
+  
   async getUserRides() {
     try {
       const response = await axios.get(`${API_URL}/rides/my-rides/`, {
@@ -152,7 +165,6 @@ class DriverService {
     }
   }
 
-  // Get ride details
   async getRideDetail(rideId) {
     try {
       const response = await axios.get(`${API_URL}/rides/${rideId}/`, {
@@ -164,7 +176,7 @@ class DriverService {
     }
   }
 
-  // Get nearby drivers (for map view)
+
   async getNearbyDrivers(lat, lng, radius = 5) {
     try {
       const response = await axios.get(`${API_URL}/map/nearby-drivers/`, {
@@ -177,7 +189,7 @@ class DriverService {
     }
   }
 
-  // Get pending approval status (for new drivers)
+ 
   async getApprovalStatus() {
     try {
       const response = await axios.get(`${API_URL}/driver/dashboard/`, {

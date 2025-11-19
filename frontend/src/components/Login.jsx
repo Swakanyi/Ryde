@@ -26,21 +26,47 @@ const Login = () => {
   setLoading(true);
 
   try {
-    await AuthService.login(formData);
+    const response = await AuthService.login(formData);
+    
+    
+    const storedToken = sessionStorage.getItem('access_token');
+    const storedUserId = sessionStorage.getItem('user_id');
+    const storedUserType = sessionStorage.getItem('user_type');
+    
+    console.log('✅ [Login] Tokens stored in sessionStorage:', {
+      hasToken: !!storedToken,
+      userId: storedUserId,
+      userType: storedUserType
+    });
+    
     const user = AuthService.getCurrentUser();
+    console.log('✅ [Login] Current user:', user);
     
     
     if (user.user_type === 'driver' || user.user_type === 'boda_rider') {
+      if (user.approval_status !== 'approved') {
+        setError(`Your driver account is ${user.approval_status}. Please wait for admin approval.`);
+        
+        AuthService.logout();
+        return;
+      }
       navigate('/driver/dashboard');
     } else {
       navigate('/dashboard');
     }
   } catch (error) {
-    setError(error.detail || 'Login failed. Please check your credentials.');
+    console.error('❌ [Login] Error:', error);
+    
+    if (error.response?.data?.error === 'driver_not_approved') {
+      setError(error.response.data.message);
+    } else {
+      setError(error.detail || error.message || 'Login failed. Please check your credentials.');
+    }
   } finally {
     setLoading(false);
   }
 };
+
   const demoAccounts = [
     { email: 'customer@ryde.com', password: 'demo123', role: 'Customer' },
     { email: 'driver@ryde.com', password: 'demo123', role: 'Driver' },

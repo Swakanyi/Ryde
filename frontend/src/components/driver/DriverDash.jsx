@@ -1,320 +1,215 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Car, 
-  MapPin, 
-  DollarSign, 
-  Clock, 
-  MessageCircle,
-  Navigation,
-  User,
-  Shield,
-  Star,
-  AlertCircle,
-  Bell
+  Car, MapPin, DollarSign, Clock, MessageCircle, Send,
+  Navigation, User, Shield, Star, AlertCircle, Bell, X, RefreshCw
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import DriverService from '../../services/driverApi';
-import websocketService from '../../services/webSocketService';
+import websocketService from '../../services/websocketService';
+import ChatService from '../../services/chatService';
 import RideManagement from './RideManagement';
 import Earnings from './Earnings';
 import VehicleInfo from './VehicleInfo';
+import { Link } from 'react-router-dom';
 
 
-const createCustomIcon = (color, letter) => {
-  return L.divIcon({
-    html: `
-      <div style="background-color: ${color}; width: 30px; height: 30px; border-radius: 50%; border: 3px solid white; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">
-        <span style="color: white; font-weight: bold; font-size: 12px;">${letter}</span>
-      </div>
-    `,
-    className: 'custom-marker',
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
-  });
+const calculateDistance = (point1, point2) => {
+  if (!point1 || !point2) return 0;
+  const R = 6371;
+  const dLat = (point2.lat - point1.lat) * Math.PI / 180;
+  const dLng = (point2.lng - point1.lng) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 +
+            Math.cos(point1.lat * Math.PI / 180) * Math.cos(point2.lat * Math.PI / 180) *
+            Math.sin(dLng/2)**2;
+  return (R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))).toFixed(2);
 };
 
-const DriverDash = () => {
-  const [dashboardData, setDashboardData] = useState(null);
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [newRideNotification, setNewRideNotification] = useState(null);
-  const [currentLocation, setCurrentLocation] = useState(null);
+const createCustomIcon = (color, letter) => L.divIcon({
+  html: `<div style="background-color: ${color}; width: 30px; height: 30px; border-radius: 50%; border: 3px solid white; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">
+           <span style="color: white; font-weight: bold; font-size: 12px;">${letter}</span>
+         </div>`,
+  className: 'custom-marker',
+  iconSize: [30, 30],
+  iconAnchor: [15, 15],
+});
 
-  useEffect(() => {
-    fetchDashboardData();
-    setupWebSocket();
-    startLocationTracking();
-  }, []);
 
-  const setupWebSocket = () => {
-    const token = localStorage.getItem('token');
-    const driverId = localStorage.getItem('user_id');
-    
-    if (driverId && token) {
-      websocketService.connect('driver', driverId, token);
-      
-      // Set up message handlers
-      websocketService.onMessage('new_ride_request', handleNewRideRequest);
-      websocketService.onMessage('ride_status_update', handleRideStatusUpdate);
-      websocketService.onMessage('chat_message', handleChatMessage);
-    }
-  };
-
-  const handleNewRideRequest = (data) => {
-    setNewRideNotification(data);
-    
-    // Auto-hide notification after 30 seconds
-    setTimeout(() => {
-      setNewRideNotification(null);
-    }, 30000);
-  };
-
-  const handleRideStatusUpdate = (data) => {
-    // Refresh dashboard when ride status changes
-    fetchDashboardData();
-  };
-
-  const handleChatMessage = (data) => {
-    // Handle incoming chat messages from customer
-    console.log('New chat message:', data);
-    // You could show a notification or update chat UI
-  };
-
-  const startLocationTracking = () => {
-    if (navigator.geolocation) {
-      // Get initial position
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const pos = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          };
-          setCurrentLocation(pos);
-          updateDriverLocation(pos);
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-        }
-      );
-
-      // Watch position for updates
-      const watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          const pos = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          };
-          setCurrentLocation(pos);
-          
-          // Only update if driver is online
-          if (dashboardData?.driver_status?.is_online) {
-            updateDriverLocation(pos);
-          }
-        },
-        (error) => {
-          console.error('Error watching location:', error);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 5000,
-          maximumAge: 30000
-        }
-      );
-
-      return () => navigator.geolocation.clearWatch(watchId);
-    }
-  };
-
-  const updateDriverLocation = async (location) => {
-    try {
-      await DriverService.updateDriverLocation({
-        lat: location.lat,
-        lng: location.lng,
-        is_online: dashboardData?.driver_status?.is_online || false
-      });
-
-      // Broadcast location via WebSocket if there's an active ride
-      if (dashboardData?.current_ride) {
-        websocketService.sendMessage('location_update', {
-          ride_id: dashboardData.current_ride.id,
-          lat: location.lat,
-          lng: location.lng,
-          timestamp: new Date().toISOString()
-        });
-      }
-    } catch (error) {
-      console.error('Error updating location:', error);
-    }
-  };
-
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      const data = await DriverService.getDashboard();
-      setDashboardData(data);
-    } catch (error) {
-      console.error('Dashboard error:', error);
-      setError(error.error || error.message || 'Failed to load dashboard');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const toggleOnlineStatus = async (isOnline) => {
-    try {
-      await DriverService.toggleOnlineStatus(isOnline);
-      fetchDashboardData(); // Refresh data
-    } catch (error) {
-      setError(error.error || 'Failed to update status');
-    }
-  };
-
-  const acceptRide = async (rideId) => {
-    try {
-      await DriverService.acceptRide(rideId);
-      setNewRideNotification(null);
-      fetchDashboardData(); // Refresh to show active ride
-      
-      // Notify customer via WebSocket
-      websocketService.sendMessage('ride_status_update', {
-        ride_id: rideId,
-        status: 'accepted',
-        timestamp: new Date().toISOString(),
-        driver_id: localStorage.getItem('user_id')
-      });
-    } catch (error) {
-      console.error('Error accepting ride:', error);
-    }
-  };
-
-  const declineRide = async (rideId) => {
-    try {
-      await DriverService.declineRide(rideId);
-      setNewRideNotification(null);
-    } catch (error) {
-      console.error('Error declining ride:', error);
-    }
-  };
-
-  // Update the ride action functions to use WebSocket
-  const handleRideAction = async (rideId, action) => {
-    try {
-      let newStatus = '';
-      
-      switch (action) {
-        case 'arrived':
-          await DriverService.updateRideStatus(rideId, 'driver_arrived');
-          newStatus = 'driver_arrived';
-          break;
-        case 'start':
-          await DriverService.startRide(rideId);
-          newStatus = 'in_progress';
-          break;
-        case 'complete':
-          await DriverService.completeRide(rideId);
-          newStatus = 'completed';
-          break;
-        default:
-          break;
-      }
-
-      // Notify customer via WebSocket
-      if (newStatus) {
-        websocketService.sendMessage('ride_status_update', {
-          ride_id: rideId,
-          status: newStatus,
-          timestamp: new Date().toISOString()
-        });
-      }
-      
-      fetchDashboardData(); // Refresh dashboard
-    } catch (error) {
-      console.error('Ride action error:', error);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-emerald-900 to-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-white text-lg">Loading your dashboard...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error && (error.includes('pending approval') || error.includes('not approved'))) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-emerald-900 to-gray-900 flex items-center justify-center p-4">
-        <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-8 max-w-md w-full text-center border border-white/20">
-          <Shield className="w-16 h-16 text-yellow-400 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-white mb-4">Account Under Review</h2>
-          <p className="text-white/80 mb-2">Status: {dashboardData?.approval_status || 'Pending'}</p>
-          {dashboardData?.rejection_reason && (
-            <p className="text-white/60 text-sm mb-6">Reason: {dashboardData.rejection_reason}</p>
-          )}
-          <p className="text-white/70">Please wait for admin approval to start driving.</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-emerald-900 to-gray-900 flex items-center justify-center p-4">
-        <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-8 max-w-md w-full text-center border border-white/20">
-          <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-white mb-4">Error Loading Dashboard</h2>
-          <p className="text-white/80 mb-6">{error}</p>
-          <button 
-            onClick={fetchDashboardData}
-            className="bg-emerald-500 text-white px-6 py-3 rounded-xl hover:bg-emerald-600 transition-colors"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
-  }
+const NotificationBell = ({ notifications, unreadCount, onMarkAsRead, onClearNotification, onMarkAllAsRead, onAcceptRide, onDeclineRide }) => {
+  const [showNotifications, setShowNotifications] = useState(false);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-emerald-900 to-gray-900">
-      {/* New Ride Notification */}
-      {newRideNotification && (
-        <div className="fixed top-4 right-4 bg-white rounded-2xl shadow-2xl p-6 max-w-sm z-50 animate-in slide-in-from-right">
-          <div className="flex items-center gap-3 mb-3">
-            <Bell className="w-6 h-6 text-yellow-500" />
-            <h3 className="font-bold text-gray-800">New Ride Request!</h3>
+    <div className="relative">
+      
+      <button
+        onClick={() => setShowNotifications(!showNotifications)}
+        className="relative p-2 text-white/80 hover:text-white transition-colors"
+      >
+        <Bell className="w-6 h-6" />
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center animate-pulse">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+     
+      {showNotifications && (
+        <div className="absolute right-0 top-12 w-96 bg-white rounded-2xl shadow-2xl border border-gray-200 z-50 max-h-96 overflow-hidden">
+          <div className="p-4 border-b border-gray-100">
+            <div className="flex justify-between items-center">
+              <h3 className="font-semibold text-gray-800">Notifications</h3>
+              <div className="flex gap-2">
+                {unreadCount > 0 && (
+                  <button
+                    onClick={onMarkAllAsRead}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Mark all read
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowNotifications(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-y-auto max-h-80">
+            {notifications.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">
+                <Bell className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                <p>No notifications yet</p>
+              </div>
+            ) : (
+              notifications.map((notification) => (
+                <div
+                  key={notification.id}
+                  onClick={() => onMarkAsRead(notification.id)}
+                  className={`p-4 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors ${
+                    !notification.read ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
+                  }`}
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="flex items-center gap-2">
+                      {notification.type === 'ride_request' && (
+                        <Car className="w-4 h-4 text-green-500" />
+                      )}
+                      {notification.type === 'ride_accepted' && (
+                        <MessageCircle className="w-4 h-4 text-blue-500" />
+                      )}
+                      <span className="font-semibold text-gray-800 text-sm">
+                        {notification.title}
+                      </span>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onClearNotification(notification.id);
+                      }}
+                      className="text-gray-400 hover:text-gray-600 ml-2"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                  
+                  <p className="text-gray-600 text-sm mb-2">{notification.message}</p>
+                  
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-gray-400">
+                      {new Date(notification.timestamp).toLocaleTimeString()}
+                    </span>
+                    {!notification.read && (
+                      <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                    )}
+                  </div>
+
+                
+                  {notification.type === 'ride_request' && !notification.data?.accepted && (
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAcceptRide(notification.data.id);
+                          onMarkAsRead(notification.id);
+                        }}
+                        className="flex-1 bg-green-500 text-white py-2 px-3 rounded-lg text-sm hover:bg-green-600 transition-colors"
+                      >
+                        Accept
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeclineRide(notification.data.id);
+                          onMarkAsRead(notification.id);
+                        }}
+                        className="flex-1 bg-gray-500 text-white py-2 px-3 rounded-lg text-sm hover:bg-gray-600 transition-colors"
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const PersistentNotificationBar = ({ currentNotification, onAcceptRide, onDeclineRide, onClose }) => {
+  if (!currentNotification) return null;
+
+  return (
+    <div className="fixed bottom-4 right-4 left-4 md:left-auto md:right-4 md:w-96 z-50 animate-in slide-in-from-bottom duration-500">
+      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 p-4">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+            <Car className="w-5 h-5 text-green-600" />
           </div>
           
-          <div className="space-y-2 text-sm text-gray-600">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-              <span>{newRideNotification.pickup_address}</span>
+          <div className="flex-1">
+            <div className="flex justify-between items-start mb-2">
+              <h4 className="font-semibold text-gray-800">New Ride Request</h4>
+              <button
+                onClick={onClose}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-red-400 rounded-full"></div>
-              <span>{newRideNotification.dropoff_address}</span>
-            </div>
-            <div className="flex justify-between items-center mt-3 pt-3 border-t">
-              <span className="font-bold text-lg text-gray-800">
-                Ksh {newRideNotification.fare}
+            
+            <p className="text-gray-600 text-sm mb-3">
+              {currentNotification.data.pickup_address} → {currentNotification.data.dropoff_address}
+            </p>
+            
+            <div className="flex justify-between items-center">
+              <span className="text-lg font-bold text-gray-800">
+                Ksh {currentNotification.data.fare}
               </span>
+              
               <div className="flex gap-2">
                 <button
-                  onClick={() => declineRide(newRideNotification.id)}
-                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+                  onClick={() => {
+                    onDeclineRide(currentNotification.data.id);
+                    onClose();
+                  }}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg text-sm hover:bg-gray-600 transition-colors"
                 >
                   Decline
                 </button>
                 <button
-                  onClick={() => acceptRide(newRideNotification.id)}
-                  className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+                  onClick={() => {
+                    onAcceptRide(currentNotification.data.id);
+                    onClose();
+                  }}
+                  className="px-4 py-2 bg-green-500 text-white rounded-lg text-sm hover:bg-green-600 transition-colors"
                 >
                   Accept
                 </button>
@@ -322,92 +217,918 @@ const DriverDash = () => {
             </div>
           </div>
         </div>
-      )}
-
-      {/* Header */}
-      <header className="bg-white/10 backdrop-blur-xl border-b border-white/20 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-emerald-600 to-yellow-500 rounded-xl flex items-center justify-center shadow-lg transform rotate-12">
-                <Car className="w-6 h-6 text-white -rotate-12" />
-              </div>
-              <span className="text-2xl font-black bg-gradient-to-r from-white via-emerald-200 to-yellow-200 bg-clip-text text-transparent">
-                Ryde Driver
-              </span>
-            </div>
-
-            <div className="flex items-center gap-4">
-              {/* Online Status Toggle */}
-              <div className="flex items-center gap-3">
-                <span className="text-white/80 text-sm">Status:</span>
-                <button
-                  onClick={() => toggleOnlineStatus(!dashboardData?.driver_status?.is_online)}
-                  className={`px-4 py-2 rounded-full font-semibold text-sm transition-all ${
-                    dashboardData?.driver_status?.is_online 
-                      ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25' 
-                      : 'bg-gray-600 text-white/70'
-                  }`}
-                >
-                  {dashboardData?.driver_status?.is_online ? 'ONLINE' : 'OFFLINE'}
-                </button>
-              </div>
-
-              {/* Driver Info */}
-              <div className="flex items-center gap-3 bg-white/10 rounded-xl px-4 py-2 border border-white/20">
-                <User className="w-5 h-5 text-white/70" />
-                <span className="text-white font-medium">
-                  {dashboardData?.user?.first_name} {dashboardData?.user?.last_name}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Navigation Tabs */}
-          <nav className="flex space-x-8">
-            {[
-              { id: 'dashboard', label: 'Dashboard', icon: Car },
-              { id: 'rides', label: 'Rides', icon: Navigation },
-              { id: 'earnings', label: 'Earnings', icon: DollarSign },
-              { id: 'vehicle', label: 'Vehicle', icon: Shield }
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm transition-all ${
-                  activeTab === tab.id
-                    ? 'border-emerald-400 text-emerald-400'
-                    : 'border-transparent text-white/60 hover:text-white/80'
-                }`}
-              >
-                <tab.icon className="w-4 h-4" />
-                {tab.label}
-              </button>
-            ))}
-          </nav>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeTab === 'dashboard' && (
-          <DashboardView 
-            data={dashboardData} 
-            onStatusUpdate={fetchDashboardData}
-            onRideAction={handleRideAction}
-            currentLocation={currentLocation}
-          />
-        )}
-        {activeTab === 'rides' && <RideManagement />}
-        {activeTab === 'earnings' && <Earnings />}
-        {activeTab === 'vehicle' && <VehicleInfo />}
-      </main>
+      </div>
     </div>
   );
 };
 
-// Dashboard View Component
-const DashboardView = ({ data, onStatusUpdate, onRideAction, currentLocation }) => {
+
+const DriverChatModal = ({ 
+    showChat, 
+    onClose, 
+    chatMessages, 
+    newMessage, 
+    onMessageChange, 
+    onSendMessage, 
+    customerInfo, 
+    currentRide 
+}) => {
+    const chatEndRef = useRef();
+
+    useEffect(() => {
+        if (chatEndRef.current) {
+            chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [chatMessages]);
+
+    if (!showChat) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+            <div className="bg-white rounded-2xl w-full max-w-md h-96 flex flex-col">
+                <div className="p-4 border-b flex justify-between items-center">
+                    <div>
+                        <h3 className="font-bold text-gray-800">Chat with Customer</h3>
+                        {customerInfo && (
+                            <p className="text-sm text-gray-600">
+                                {customerInfo.first_name} {customerInfo.last_name}
+                                {currentRide && (
+                                    <span className="text-xs text-gray-500 ml-2">
+                                        • Ride #{currentRide.id}
+                                    </span>
+                                )}
+                            </p>
+                        )}
+                    </div>
+                    <button 
+                        onClick={onClose}
+                        className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100"
+                    >
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+                
+                <div className="flex-1 p-4 overflow-y-auto">
+                    {chatMessages.length === 0 ? (
+                        <div className="text-center text-gray-500 mt-8">
+                            <MessageCircle className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                            <p>No messages yet</p>
+                            <p className="text-sm">Start a conversation with your customer</p>
+                        </div>
+                    ) : (
+                        chatMessages.map((msg) => (
+                            <div
+                                key={msg.id}
+                                className={`mb-3 ${msg.sender === 'driver' ? 'text-right' : 'text-left'}`}
+                            >
+                                <div
+                                    className={`inline-block px-4 py-2 rounded-2xl max-w-xs ${
+                                        msg.sender === 'driver'
+                                            ? 'bg-blue-500 text-white'
+                                            : 'bg-gray-200 text-gray-800'
+                                    }`}
+                                >
+                                    <p className="text-sm">{msg.message}</p>
+                                    <p className="text-xs opacity-70 mt-1">
+                                        {msg.sender === 'driver' ? 'You' : msg.sender_name} • {new Date(msg.timestamp).toLocaleTimeString()}
+                                    </p>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                    <div ref={chatEndRef} />
+                </div>
+                
+                <div className="p-4 border-t flex gap-2">
+                    <input
+                        type="text"
+                        value={newMessage}
+                        onChange={onMessageChange}
+                        onKeyPress={(e) => e.key === 'Enter' && onSendMessage()}
+                        placeholder="Type a message..."
+                        className="flex-1 border rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
+                    />
+                    <button
+                        onClick={onSendMessage}
+                        disabled={!newMessage.trim()}
+                        className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                        <Send className="w-4 h-4" /> 
+                        Send
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
+const DriverDash = () => {
+    const [dashboardData, setDashboardData] = useState(null);
+    const [activeTab, setActiveTab] = useState('dashboard');
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const [currentLocation, setCurrentLocation] = useState(null);
+    const [connectionState, setConnectionState] = useState('disconnected');
+    const [hasTriedConnecting, setHasTriedConnecting] = useState(false);
+    
+   
+    const [notifications, setNotifications] = useState([]);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [currentNotification, setCurrentNotification] = useState(null);
+    const [showPersistentNotification, setShowPersistentNotification] = useState(false);
+    const [showChat, setShowChat] = useState(false);
+    const [chatMessages, setChatMessages] = useState([]);
+    const [newMessage, setNewMessage] = useState('');
+    const [currentChatRide, setCurrentChatRide] = useState(null);
+    const wsInitializedRef = useRef(false);
+    const isMountedRef = useRef(true);
+    const locationWatchIdRef = useRef(null);
+    const connectionCheckIntervalRef = useRef(null);
+    const lastUpdateTimeRef = useRef(0);
+    const dashboardDataRef = useRef(null);
+    const [pendingRides, setPendingRides] = useState([]);
+    const [loadingPendingRides, setLoadingPendingRides] = useState(false);
+
+    useEffect(() => { dashboardDataRef.current = dashboardData; }, [dashboardData]);
+
+    
+    const addNotification = (notification) => {
+        const newNotification = {
+            id: Date.now(),
+            ...notification,
+            read: false
+        };
+        
+        setNotifications(prev => [newNotification, ...prev]);
+        setUnreadCount(prev => prev + 1);
+        
+        
+        try { new Audio('/notification.mp3').play().catch(() => {}); } catch {}
+    };
+
+    const markAsRead = (id) => {
+        setNotifications(prev => 
+            prev.map(notif => 
+                notif.id === id ? { ...notif, read: true } : notif
+            )
+        );
+        setUnreadCount(prev => Math.max(0, prev - 1));
+    };
+
+    const markAllAsRead = () => {
+        setNotifications(prev => prev.map(notif => ({ ...notif, read: true })));
+        setUnreadCount(0);
+    };
+
+    const clearNotification = (id) => {
+        const removedNotif = notifications.find(n => n.id === id);
+        setNotifications(prev => prev.filter(notif => notif.id !== id));
+        if (removedNotif && !removedNotif.read) {
+            setUnreadCount(prev => Math.max(0, prev - 1));
+        }
+    };
+
+    const showPersistentNotificationBar = (data) => {
+        setCurrentNotification({
+            type: 'ride_request',
+            data: data,
+            timestamp: new Date()
+        });
+        setShowPersistentNotification(true);
+        
+        
+        setTimeout(() => {
+            if (isMountedRef.current) {
+                setShowPersistentNotification(false);
+            }
+        }, 30000);
+    };
+
+   
+const sendMessage = async () => {
+  if (!newMessage.trim() || !currentChatRide) return;
+
+  try {
+    
+    await ChatService.sendDriverMessage(
+      currentChatRide.id, 
+      newMessage, 
+      currentChatRide.customer_id || currentChatRide.customer?.id
+    );
+
+   
+    const newChatMessage = ChatService.formatMessage({
+      message: newMessage,
+      sender: 'driver',
+      timestamp: new Date().toISOString(),
+      sender_name: 'You'
+    }, 'driver');
+
+    setChatMessages(prev => [...prev, newChatMessage]);
+    setNewMessage('');
+
+  } catch (error) {
+    console.error('❌ [Chat] Error sending message:', error);
+    
+    console.error('Failed to send message:', error);
+  }
+};
+
+const openChat = (ride) => {
+  setCurrentChatRide({
+    ...ride,
+    customer_id: ride.customer_id || ride.customer?.id
+  });
+  setShowChat(true);
+
+  setNotifications(prev => 
+    prev.filter(notif => !(notif.type === 'chat_message' && notif.data?.ride_id === ride.id))
+  );
+  setUnreadCount(prev => Math.max(0, prev - 1));
+};
+
+    
+    const handleConnectionEstablished = () => {
+        console.log('✅ WebSocket connected');
+        setConnectionState('connected');
+        setHasTriedConnecting(true);
+        fetchDashboardData();
+    };
+
+  
+const handleChatMessage = (data) => {
+  console.log('💬 [Driver] New chat message received - FULL DATA:', data);
+  
+  
+  const newChatMessage = {
+    id: Date.now() + Math.random(),
+    message: data.message || data.content,
+    sender: data.sender_type || data.sender || 'customer',
+    timestamp: data.timestamp || new Date().toISOString(),
+    sender_name: data.sender_name || 'Customer',
+    isCurrentUser: false,
+    ride_id: data.ride_id
+  };
+  
+  console.log('✅ [Driver] Message added to chat:', newChatMessage);
+  setChatMessages(prev => [...prev, newChatMessage]);
+  
+  
+  if (!showChat) {
+    addNotification({
+      type: 'customer_message',
+      title: 'New Message from Customer',
+      message: data.message,
+      data: data
+    });
+  }
+};
+
+    const handleNewRideRequest = (data) => {
+        console.log('🛎 New ride request:', data);
+        
+        
+        addNotification({
+            type: 'ride_request',
+            title: 'New Ride Request',
+            message: `${data.pickup_address} → ${data.dropoff_address}`,
+            data: data
+        });
+        
+        
+        showPersistentNotificationBar(data);
+    };
+
+    const handleRideAcceptedSelf = (data) => {
+        console.log('🎯 Ride accepted - updating dashboard', data);
+        
+       
+        addNotification({
+            type: 'ride_accepted',
+            title: 'Ride Accepted',
+            message: `You accepted ride from ${data.customer_name}`,
+            data: data
+        });
+        
+        fetchDashboardData();
+    };
+
+    const handleRideTaken = (data) => {
+        console.log('Ride taken by another driver', data);
+        
+        setShowPersistentNotification(false);
+    };
+
+    const handleRideStatusUpdate = () => {
+        console.log('🔄 Ride status updated - refreshing dashboard');
+        fetchDashboardData();
+    };
+
+    const handleLocationUpdate = (data) => console.log('📍 Location update:', data);
+    
+const setupWebSocket = () => {
+  if (wsInitializedRef.current) return;
+  
+  const token = sessionStorage.getItem('access_token');
+  const driverId = sessionStorage.getItem('user_id');
+  const userType = sessionStorage.getItem('user_type');
+
+  console.log(`🟡 [Driver WS Setup] User: ${driverId}, Type: ${userType}, Token: ${token ? 'Present' : 'Missing'}`);
+
+  if (!driverId || !token || !['driver', 'boda_rider'].includes(userType)) {
+    console.log('❌ [Driver WS Setup] Missing credentials or wrong user type');
+    return;
+  }
+
+  wsInitializedRef.current = true;
+
+  websocketService.clearAllHandlers();
+
+  
+  websocketService.onMessage('connection_established', handleConnectionEstablished);
+  websocketService.onMessage('new_ride_request', handleNewRideRequest);
+  websocketService.onMessage('ride_accepted_self', handleRideAcceptedSelf);
+  websocketService.onMessage('ride_taken', handleRideTaken);
+  websocketService.onMessage('ride_status_update', handleRideStatusUpdate);
+  websocketService.onMessage('location_update', handleLocationUpdate);
+  websocketService.onMessage('customer_message', handleChatMessage);
+  websocketService.onMessage('ride_cancelled', handleRideStatusUpdate);
+
+  
+  websocketService.onMessage('error', (data) => {
+    console.error('❌ [WebSocket] Error:', data);
+    setConnectionState('error');
+  });
+
+ 
+  console.log('🔄 [Driver WS] Connecting WebSocket...');
+  
+  const connectResult = websocketService.connect(userType, driverId, token);
+  
+  if (connectResult && typeof connectResult.catch === 'function') {
+    
+    connectResult.catch((error) => {
+      console.error('❌ [Driver WS] Connection failed:', error);
+      setConnectionState('error');
+      wsInitializedRef.current = false; 
+    });
+  } else {
+    
+    console.log('🟡 [Driver WS] Connect did not return a Promise');
+    if (!websocketService.isConnected()) {
+      setConnectionState('error');
+      wsInitializedRef.current = false;
+    }
+  }
+};
+
+
+const fetchAvailableRides = async () => {
+    try {
+        setLoadingPendingRides(true);
+        const rides = await DriverService.getAvailableRides();
+        if (isMountedRef.current) {
+            setPendingRides(rides || []);
+        }
+    } catch (err) {
+        console.error(' [Fetch Rides] Error:', err);
+        if (isMountedRef.current) {
+            setPendingRides([]);
+        }
+    } finally {
+        if (isMountedRef.current) {
+            setLoadingPendingRides(false);
+        }
+    }
+};
+
+  
+{dashboardData?.user?.approval_status && dashboardData.user.approval_status !== 'approved' && (
+    <div className={`px-6 py-4 text-center border-b ${
+        dashboardData.user.approval_status === 'pending'
+            ? 'bg-yellow-500/10 border-yellow-500/30'
+            : 'bg-red-500/10 border-red-500/30'
+    }`}>
+        <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-center gap-4">
+               
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                    dashboardData.user.approval_status === 'pending'
+                        ? 'bg-yellow-500/20 text-yellow-400'
+                        : 'bg-red-500/20 text-red-400'
+                }`}>
+                    {dashboardData.user.approval_status === 'pending' ? (
+                        <Clock className="w-5 h-5" />
+                    ) : (
+                        <AlertCircle className="w-5 h-5" />
+                    )}
+                </div>
+                
+                
+                <div className="text-left flex-1">
+                    <h3 className={`font-semibold ${
+                        dashboardData.user.approval_status === 'pending'
+                            ? 'text-yellow-300'
+                            : 'text-red-300'
+                    }`}>
+                        {dashboardData.user.approval_status === 'pending' 
+                            ? 'Application Under Review' 
+                            : `Account ${dashboardData.user.approval_status.charAt(0).toUpperCase() + dashboardData.user.approval_status.slice(1)}`
+                        }
+                    </h3>
+                    <p className="text-white/80 text-sm mt-1">
+                        {dashboardData.user.approval_status === 'pending' ? (
+                            <>Your driver application is being reviewed. This usually takes <strong>24-48 hours</strong>. You can view the dashboard but cannot go online until approved.</>
+                        ) : dashboardData.user.approval_status === 'rejected' ? (
+                            <>Your application was not approved{dashboardData.user.rejection_reason && <>. <strong>Reason:</strong> {dashboardData.user.rejection_reason}</>}. Contact support to reapply.</>
+                        ) : (
+                            <>Your account requires attention. Please contact support for assistance.</>
+                        )}
+                    </p>
+                </div>
+                
+                
+                <div className="flex gap-2">
+                    {dashboardData.user.approval_status === 'rejected' ? (
+                        <button className="bg-white/10 text-white px-4 py-2 rounded-lg text-sm hover:bg-white/20 transition-colors border border-white/20">
+                            Contact Support
+                        </button>
+                    ) : (
+                        <button className="bg-white/10 text-white px-4 py-2 rounded-lg text-sm hover:bg-white/20 transition-colors border border-white/20">
+                            Check Status
+                        </button>
+                    )}
+                </div>
+            </div>
+            
+            
+            {dashboardData.user.approval_status === 'pending' && (
+                <div className="mt-4 pt-4 border-t border-white/10">
+                    <div className="flex justify-between items-center max-w-md mx-auto">
+                        {[
+                            { step: 1, label: 'Applied', completed: true },
+                            { step: 2, label: 'Review', completed: true },
+                            { step: 3, label: 'Approval', completed: false }
+                        ].map((item, index) => (
+                            <div key={item.step} className="flex flex-col items-center">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold ${
+                                    item.completed 
+                                        ? 'bg-emerald-500 text-white' 
+                                        : 'bg-white/10 text-white/60'
+                                }`}>
+                                    {item.completed ? '✓' : item.step}
+                                </div>
+                                <span className="text-white/60 text-xs mt-1">{item.label}</span>
+                                {index < 2 && (
+                                    <div className={`h-0.5 w-16 -mt-4 -mx-8 z-10 ${
+                                        item.completed ? 'bg-emerald-500' : 'bg-white/10'
+                                    }`}></div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    </div>
+)}
+
+    // ================= Location Tracking =================
+    const updateDriverLocation = async (location) => {
+        const now = Date.now();
+        if (now - lastUpdateTimeRef.current < 15000) return;
+        lastUpdateTimeRef.current = now;
+
+        const isOnline = dashboardDataRef.current?.driver_status?.is_online;
+        if (!isOnline) return;
+
+        try {
+            await DriverService.updateDriverLocation({ lat: location.lat, lng: location.lng, is_online: isOnline });
+            if (dashboardDataRef.current?.current_ride) {
+                websocketService.sendMessage('location_update', {
+                    ride_id: dashboardDataRef.current.current_ride.id,
+                    lat: location.lat,
+                    lng: location.lng,
+                    timestamp: new Date().toISOString()
+                });
+            }
+        } catch (err) { console.error(err); }
+    };
+
+    const startLocationTracking = () => {
+        if (!navigator.geolocation) {
+            console.log('❌ [Location] Geolocation not supported');
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                if (!isMountedRef.current) return;
+                const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                setCurrentLocation(loc);
+                updateDriverLocation(loc);
+                console.log('📍 [Location] Current position obtained');
+            },
+            (error) => {
+                console.log('❌ [Location] Error getting position:', error.message);
+                if (error.code === error.PERMISSION_DENIED) {
+                    console.log('📍 [Location] Please enable location permissions in your browser');
+                }
+            }
+        );
+
+        locationWatchIdRef.current = navigator.geolocation.watchPosition(
+            (pos) => {
+                if (!isMountedRef.current) return;
+                const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                setCurrentLocation(loc);
+                if (dashboardDataRef.current?.driver_status?.is_online) {
+                    updateDriverLocation(loc);
+                }
+            },
+            (error) => {
+                console.log('❌ [Location] Error watching position:', error.message);
+            },
+            { 
+                enableHighAccuracy: true, 
+                timeout: 10000,
+                maximumAge: 30000 
+            }
+        );
+    };
+
+
+    useEffect(() => {
+        isMountedRef.current = true;
+
+        if ('Notification' in window && Notification.permission === 'default')
+            Notification.requestPermission();
+
+        fetchDashboardData().then(() => setupWebSocket());
+        startLocationTracking();
+
+        connectionCheckIntervalRef.current = setInterval(() => {
+            if (!isMountedRef.current) return;
+            const state = websocketService.getConnectionState?.() || 'disconnected';
+            setConnectionState(state);
+
+            if (state === 'disconnected' && !websocketService.isConnecting) setupWebSocket();
+        }, 5000);
+
+        return () => {
+            isMountedRef.current = false;
+            clearInterval(connectionCheckIntervalRef.current);
+            if (locationWatchIdRef.current) navigator.geolocation.clearWatch(locationWatchIdRef.current);
+            websocketService.disconnect();
+        };
+    }, []);
+
+  
+    useEffect(() => {
+        if (dashboardData?.driver_status?.is_online && !dashboardData?.current_ride) {
+            console.log('🔄 [Auto-Refresh] Starting available rides refresh every 10 seconds');
+            const interval = setInterval(fetchAvailableRides, 10000); 
+            
+            
+            fetchAvailableRides();
+            
+            return () => {
+                console.log('🔄 [Auto-Refresh] Stopping available rides refresh');
+                clearInterval(interval);
+            };
+        } else {
+            
+            if (!dashboardData?.driver_status?.is_online || dashboardData?.current_ride) {
+                setPendingRides([]);
+            }
+        }
+    }, [dashboardData?.driver_status?.is_online, dashboardData?.current_ride]);
+
+
+    const acceptRide = async (rideId) => {
+        try {
+            await DriverService.acceptRide(rideId);
+            setShowPersistentNotification(false);
+            fetchDashboardData();
+            const cur = dashboardDataRef.current;
+            websocketService.sendRideMessage(rideId, 'ride_accepted', {
+                driver_id: sessionStorage.getItem('user_id'),
+                driver_name: `${cur?.user?.first_name || ''} ${cur?.user?.last_name || ''}`.trim(),
+                driver_phone: cur?.user?.phone_number || '',
+                vehicle_type: cur?.vehicle_info?.vehicle_type || '',
+                license_plate: cur?.vehicle_info?.license_plate || ''
+            });
+        } catch (err) { console.error(err); setError('Failed to accept ride'); }
+    };
+
+    const declineRide = async (rideId) => {
+    try { 
+        console.log('🟡 [Driver] Declining ride:', rideId);
+        await DriverService.declineRide(rideId); 
+        
+        
+        websocketService.sendRideMessage(rideId, 'ride_declined', {
+            driver_id: sessionStorage.getItem('user_id'),
+            driver_name: `${dashboardDataRef.current?.user?.first_name || ''} ${dashboardDataRef.current?.user?.last_name || ''}`.trim(),
+            timestamp: new Date().toISOString(),
+            message: 'Driver declined the ride request'
+        });
+        
+        setShowPersistentNotification(false);
+        
+        
+        setPendingRides(prev => prev.filter(ride => ride.id !== rideId));
+        
+        console.log('✅ [Driver] Ride declined and customer notified');
+        
+    } catch (err) { 
+        console.error('❌ [Driver] Error declining ride:', err); 
+        setError('Failed to decline ride');
+    }
+};
+
+    const handleRideAction = async (rideId, action) => {
+        let newStatus = '';
+        try {
+            if (action === 'arrived') { await DriverService.updateRideStatus(rideId, 'driver_arrived'); newStatus = 'driver_arrived'; }
+            if (action === 'start') { await DriverService.startRide(rideId); newStatus = 'in_progress'; }
+            if (action === 'complete') { await DriverService.completeRide(rideId); newStatus = 'completed'; }
+            if (newStatus) websocketService.sendMessage('ride_status_update', { ride_id: rideId, status: newStatus, timestamp: new Date().toISOString() });
+            fetchDashboardData();
+        } catch (err) { console.error(err); }
+    };
+
+    
+   const fetchDashboardData = async () => {
+    try { 
+        setLoading(true); 
+        setError(''); 
+        const data = await DriverService.getDashboard(); 
+        if (isMountedRef.current) {
+            setDashboardData(data); 
+            
+            if (data?.driver_status?.is_online) {
+                fetchAvailableRides();
+            }
+        }
+    } catch (err) { 
+        if (isMountedRef.current) setError(err.error || err.message || 'Failed to load dashboard'); 
+    } finally { 
+        if (isMountedRef.current) setLoading(false); 
+    }
+};
+
+  const toggleOnlineStatus = async (isOnline) => { 
+    try { 
+        console.log(`🟡 [Toggle Status] Setting online status to: ${isOnline}`);
+        
+        
+        if (isOnline && dashboardData?.user?.approval_status && dashboardData.user.approval_status !== 'approved') {
+            let message = 'Your driver account is ';
+            if (dashboardData?.user?.approval_status === 'pending') {
+                message += 'pending approval. Please wait for admin approval.';
+            } else if (dashboardData?.user?.approval_status === 'rejected') {
+                message += 'rejected. Contact support for more information.';
+                if (dashboardData?.user?.rejection_reason) {
+                    message += ` Reason: ${dashboardData.user.rejection_reason}`;
+                }
+            } else if (dashboardData?.user?.approval_status === 'suspended') {
+                message += 'suspended. Contact support for more information.';
+            } else {
+                message += 'not approved. Please contact support.';
+            }
+            
+            setError(message);
+            return;
+        }
+        
+       
+        const locationData = {};
+        if (currentLocation) {
+            locationData.lat = currentLocation.lat;
+            locationData.lng = currentLocation.lng;
+        } else {
+           
+            locationData.lat = -1.2921;
+            locationData.lng = 36.8219;
+        }
+        
+        const result = await DriverService.toggleOnlineStatus({
+            is_online: isOnline,
+            ...locationData
+        });
+        
+        console.log('✅ [Toggle Status] Success:', result);
+        
+       
+        fetchDashboardData();
+        
+       
+        if (isOnline) {
+            console.log('🔄 [Toggle Status] Fetching available rides...');
+            fetchAvailableRides();
+            
+            if (connectionState !== 'connected') {
+                console.log('🔄 [Toggle Status] Ensuring WebSocket connection...');
+                setupWebSocket();
+            }
+        } else {
+            
+            setPendingRides([]);
+        }
+        
+    } catch (err) { 
+        console.error('❌ [Toggle Status] Error:', err);
+        setError(err.error || 'Failed to update status'); 
+    }  
+};
+
+    
+    if (loading) return <div className="text-white p-4">Loading...</div>;
+    if (error) return <div className="text-red-500 p-4">{error}</div>;
+
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-gray-900 via-emerald-900 to-gray-900">
+           
+            {hasTriedConnecting && connectionState === 'disconnected' && (
+                <div className="bg-red-500/20 text-red-300 px-4 py-2 text-center text-sm">
+                    🔴 Disconnected from server - Attempting to reconnect...
+                </div>
+            )}
+            {connectionState === 'error' && (
+                <div className="bg-red-500/20 text-red-300 px-4 py-2 text-center text-sm">
+                    ❌ Connection error - Please refresh the page
+                </div>
+            )}
+
+            
+{dashboardData?.user?.approval_status && dashboardData.user.approval_status !== 'approved' && (
+    <div className={`px-4 py-3 text-center text-sm ${
+        dashboardData.user.approval_status === 'pending'
+            ? 'bg-yellow-500/20 text-yellow-300 border-b border-yellow-500/30'
+            : 'bg-red-500/20 text-red-300 border-b border-red-500/30'
+    }`}>
+        {dashboardData.user.approval_status === 'pending' ? (
+            <>
+                ⏳ Your driver account is <strong>pending approval</strong>. 
+                You can view the dashboard but cannot go online or accept rides until approved.
+            </>
+        ) : dashboardData.user.approval_status === 'rejected' ? (
+            <>
+                ❌ Your driver account was <strong>rejected</strong>. 
+                {dashboardData.user.rejection_reason && ` Reason: ${dashboardData.user.rejection_reason}`}
+                Contact support for more information.
+            </>
+        ) : (
+            <>
+                ⚠️ Your driver account is <strong>{dashboardData.user.approval_status}</strong>. 
+                Contact support for more information.
+            </>
+        )}
+    </div>
+)}
+
+            
+            <header className="bg-white/10 backdrop-blur-xl border-b border-white/20 sticky top-0 z-50">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="flex justify-between items-center py-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-gradient-to-br from-emerald-600 to-yellow-500 rounded-xl flex items-center justify-center shadow-lg transform rotate-12">
+                                <Car className="w-6 h-6 text-white -rotate-12" />
+                            </div>
+                            <Link to='/homepage'>
+                                <span className="text-2xl font-black bg-gradient-to-r from-white via-emerald-200 to-yellow-200 bg-clip-text text-transparent">
+                                    Ryde Driver
+                                </span>
+                            </Link>
+                        </div>
+
+                        <div className="flex items-center gap-4">
+                            
+                            <NotificationBell
+                                notifications={notifications}
+                                unreadCount={unreadCount}
+                                onMarkAsRead={markAsRead}
+                                onClearNotification={clearNotification}
+                                onMarkAllAsRead={markAllAsRead}
+                                onAcceptRide={acceptRide}
+                                onDeclineRide={declineRide}
+                            />
+
+                            <div className="flex items-center gap-3">
+                                <span className="text-white/80 text-sm">Status:</span>
+                                <button
+                                    onClick={() => toggleOnlineStatus(!dashboardData?.driver_status?.is_online)}
+                                    className={`px-4 py-2 rounded-full font-semibold text-sm transition-all ${
+                                        dashboardData?.driver_status?.is_online 
+                                            ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25' 
+                                            : 'bg-gray-600 text-white/70'
+                                    }`}
+                                >
+                                    {dashboardData?.driver_status?.is_online ? 'ONLINE' : 'OFFLINE'}
+                                </button>
+
+                              {dashboardData?.user?.approval_status && (
+    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+        dashboardData.user.approval_status === 'approved' 
+            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+            : dashboardData.user.approval_status === 'pending'
+            ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
+            : 'bg-red-500/20 text-red-300 border border-red-500/30'
+    }`}>
+        {dashboardData.user.approval_status.toUpperCase()}
+    </span>
+)}
+    
+                            </div>
+
+                            <div className="flex items-center gap-3 bg-white/10 rounded-xl px-4 py-2 border border-white/20">
+                                <User className="w-5 h-5 text-white/70" />
+                                <span className="text-white font-medium">
+                                    {dashboardData?.user?.first_name} {dashboardData?.user?.last_name}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <nav className="flex space-x-8">
+                        {[
+                            { id: 'dashboard', label: 'Dashboard', icon: Car },
+                            { id: 'rides', label: 'Rides', icon: Navigation },
+                            { id: 'earnings', label: 'Earnings', icon: DollarSign },
+                            { id: 'vehicle', label: 'Vehicle', icon: Shield }
+                        ].map((tab) => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm transition-all ${
+                                    activeTab === tab.id
+                                        ? 'border-emerald-400 text-emerald-400'
+                                        : 'border-transparent text-white/60 hover:text-white/80'
+                                }`}
+                            >
+                                <tab.icon className="w-4 h-4" />
+                                {tab.label}
+                            </button>
+                        ))}
+                    </nav>
+                </div>
+            </header>
+
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                {activeTab === 'dashboard' && (
+                    <DashboardView 
+                        data={dashboardData} 
+                        onStatusUpdate={fetchDashboardData}
+                        onRideAction={handleRideAction}
+                        currentLocation={currentLocation}
+                        notifications={notifications}
+      onOpenChat={openChat}
+       pendingRides={pendingRides}
+        loadingPendingRides={loadingPendingRides}
+        onAcceptRide={acceptRide}
+         onFetchAvailableRides={fetchAvailableRides}
+                    />
+                )}
+                {activeTab === 'rides' && <RideManagement />}
+                {activeTab === 'earnings' && <Earnings />}
+                {activeTab === 'vehicle' && <VehicleInfo />}
+            </main>
+
+            <DriverChatModal
+                showChat={showChat}
+                onClose={() => setShowChat(false)}
+                chatMessages={chatMessages}
+                newMessage={newMessage}
+                onMessageChange={(e) => setNewMessage(e.target.value)}
+                onSendMessage={sendMessage}
+                customerInfo={dashboardData?.current_ride ? {
+                    first_name: dashboardData.current_ride.customer_name?.split(' ')[0] || 'Customer',
+                    last_name: dashboardData.current_ride.customer_name?.split(' ')[1] || '',
+                } : null}
+                currentRide={currentChatRide}
+            />
+
+            {showPersistentNotification && (
+                <PersistentNotificationBar
+                    currentNotification={currentNotification}
+                    onAcceptRide={acceptRide}
+                    onDeclineRide={declineRide}
+                    onClose={() => setShowPersistentNotification(false)}
+                />
+            )}
+        </div>
+    );
+};
+
+ 
+const DashboardView = ({ data, onStatusUpdate, onRideAction, currentLocation, notifications, onOpenChat, pendingRides = [],
+    loadingPendingRides = false,
+    onAcceptRide, onFetchAvailableRides}) => {
+      const dashboardData = data;
+
+      
   const stats = [
     {
       icon: DollarSign,
@@ -437,7 +1158,48 @@ const DashboardView = ({ data, onStatusUpdate, onRideAction, currentLocation }) 
 
   return (
     <div className="space-y-8">
-      {/* Stats Grid */}
+      
+      {dashboardData?.user?.approval_status && dashboardData.user.approval_status !== 'approved' && (
+        <div className={`rounded-2xl p-6 border ${
+            dashboardData.user.approval_status === 'pending'
+                ? 'bg-yellow-500/10 border-yellow-500/30'
+                : 'bg-red-500/10 border-red-500/30'
+        }`}>
+          <div className="flex items-center gap-4">
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                dashboardData.user.approval_status === 'pending'
+                    ? 'bg-yellow-500/20'
+                    : 'bg-red-500/20'
+            }`}>
+              {dashboardData.user.approval_status === 'pending' ? (
+                <Clock className="w-6 h-6 text-yellow-400" />
+              ) : (
+                <AlertCircle className="w-6 h-6 text-red-400" />
+              )}
+            </div>
+            <div>
+              <p className={`font-semibold ${
+                  dashboardData.user.approval_status === 'pending'
+                      ? 'text-yellow-300'
+                      : 'text-red-300'
+              }`}>
+                Account {dashboardData.user.approval_status === 'pending' ? 'Pending Approval' : 'Not Approved'}
+              </p>
+              <p className="text-white/60 text-sm">
+                {dashboardData.user.approval_status === 'pending' 
+                  ? 'Your driver application is under review. You will be notified once approved.'
+                  : dashboardData.user.approval_status === 'rejected'
+                  ? `Your application was rejected.${dashboardData.user.rejection_reason ? ` Reason: ${dashboardData.user.rejection_reason}` : ''}`
+                  : 'Your account status requires attention. Please contact support.'
+                }
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+    
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, index) => (
           <div 
@@ -458,9 +1220,9 @@ const DashboardView = ({ data, onStatusUpdate, onRideAction, currentLocation }) 
         ))}
       </div>
 
-      {/* Current Ride & Quick Actions Side by Side */}
+    
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Current Ride */}
+    
         <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
             <Navigation className="w-5 h-5 text-emerald-400" />
@@ -504,7 +1266,6 @@ const DashboardView = ({ data, onStatusUpdate, onRideAction, currentLocation }) 
                     Ksh {data.current_ride.fare}
                   </span>
                   
-                  {/* Ride Action Buttons */}
                   <div className="flex gap-2">
                     {data.current_ride.status === 'accepted' && (
                       <button 
@@ -530,6 +1291,15 @@ const DashboardView = ({ data, onStatusUpdate, onRideAction, currentLocation }) 
                         Complete
                       </button>
                     )}
+                    {data.current_ride && (
+     <button 
+    onClick={() => onOpenChat(data.current_ride)}
+    className="bg-blue-500 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-600 transition-colors flex items-center gap-2"
+  >
+    <MessageCircle className="w-4 h-4" />
+    Chat
+  </button>
+)}
                   </div>
                 </div>
               </div>
@@ -543,74 +1313,284 @@ const DashboardView = ({ data, onStatusUpdate, onRideAction, currentLocation }) 
           )}
         </div>
 
-{/* Map view */}
-<div className="col-span-2 bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20">
-  <h3 className="text-lg font-semibold text-white mb-4">Navigation Map</h3>
-  <div style={{ height: '400px' }}>
-    <MapContainer center={currentLocation || [-1.2921, 36.8219]} zoom={13}>
-      <TileLayer
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
-      
-      {/* Driver's current location */}
-      {currentLocation && (
-        <Marker position={currentLocation} icon={createCustomIcon('#10B981', 'D')}>
-          <Popup>Your Location</Popup>
-        </Marker>
-      )}
-      
-      {/* Show pickup/dropoff if there's an active ride */}
-      {data?.current_ride && (
-        <>
-          <Marker 
-            position={[data.current_ride.pickup_lat, data.current_ride.pickup_lng]} 
-            icon={createCustomIcon('#3B82F6', 'P')}
-          >
-            <Popup>Pickup Location</Popup>
-          </Marker>
-          <Marker 
-            position={[data.current_ride.dropoff_lat, data.current_ride.dropoff_lng]} 
-            icon={createCustomIcon('#EF4444', 'D')}
-          >
-            <Popup>Dropoff Location</Popup>
-          </Marker>
-        </>
-      )}
-    </MapContainer>
-  </div>
-</div>
-
-        {/* Quick Actions */}
+       
         <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20">
-          <h3 className="text-lg font-semibold text-white mb-4">Quick Actions</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <button 
-              onClick={() => window.location.href = '/driver/location'}
-              className="bg-emerald-500/20 text-emerald-300 p-4 rounded-xl border border-emerald-500/30 hover:bg-emerald-500/30 transition-all"
+          <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-emerald-400" />
+            Navigation Map
+          </h3>
+          
+          <div className="rounded-xl overflow-hidden" style={{ height: '400px' }}>
+            <MapContainer 
+              center={currentLocation || [-1.2921, 36.8219]} 
+              zoom={13}
+              style={{ height: '100%', width: '100%' }}
+              scrollWheelZoom={true}
             >
-              <MapPin className="w-6 h-6 mx-auto mb-2" />
-              <span className="text-sm font-medium">Update Location</span>
-            </button>
-            <button className="bg-blue-500/20 text-blue-300 p-4 rounded-xl border border-blue-500/30 hover:bg-blue-500/30 transition-all">
-              <MessageCircle className="w-6 h-6 mx-auto mb-2" />
-              <span className="text-sm font-medium">Messages</span>
-            </button>
-            <button 
-              onClick={() => window.location.href = '/driver/earnings'}
-              className="bg-yellow-500/20 text-yellow-300 p-4 rounded-xl border border-yellow-500/30 hover:bg-yellow-500/30 transition-all"
-            >
-              <DollarSign className="w-6 h-6 mx-auto mb-2" />
-              <span className="text-sm font-medium">Earnings</span>
-            </button>
-            <button className="bg-purple-500/20 text-purple-300 p-4 rounded-xl border border-purple-500/30 hover:bg-purple-500/30 transition-all">
-              <User className="w-6 h-6 mx-auto mb-2" />
-              <span className="text-sm font-medium">Profile</span>
-            </button>
+              <TileLayer
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+              />
+              
+              {currentLocation && (
+                <Marker 
+                  position={[currentLocation.lat, currentLocation.lng]} 
+                  icon={createCustomIcon('#10B981', 'Y')}
+                >
+                  <Popup>
+                    <div className="text-center">
+                      <p className="font-bold">Your Location</p>
+                      <p className="text-xs text-gray-600">Currently here</p>
+                    </div>
+                  </Popup>
+                </Marker>
+              )}
+              
+              {data?.current_ride?.pickup_latitude && data?.current_ride?.pickup_longitude && (
+                <Marker 
+                  position={[
+                    parseFloat(data.current_ride.pickup_latitude), 
+                    parseFloat(data.current_ride.pickup_longitude)
+                  ]} 
+                  icon={createCustomIcon('#3B82F6', 'P')}
+                >
+                  <Popup>
+                    <div className="text-center">
+                      <p className="font-bold">Pickup Location</p>
+                      <p className="text-xs text-gray-600">{data.current_ride.pickup_address}</p>
+                    </div>
+                  </Popup>
+                </Marker>
+              )}
+              
+              {data?.current_ride?.dropoff_latitude && data?.current_ride?.dropoff_longitude && (
+                <Marker 
+                  position={[
+                    parseFloat(data.current_ride.dropoff_latitude), 
+                    parseFloat(data.current_ride.dropoff_longitude)
+                  ]} 
+                  icon={createCustomIcon('#EF4444', 'D')}
+                >
+                  <Popup>
+                    <div className="text-center">
+                      <p className="font-bold">Dropoff Location</p>
+                      <p className="text-xs text-gray-600">{data.current_ride.dropoff_address}</p>
+                    </div>
+                  </Popup>
+                </Marker>
+              )}
+            </MapContainer>
+          </div>
+          
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="bg-white/5 rounded-lg p-3">
+              <p className="text-white/60 text-xs">Current Position</p>
+              <p className="text-white font-medium text-sm">
+                {currentLocation 
+                  ? `${currentLocation.lat.toFixed(4)}, ${currentLocation.lng.toFixed(4)}`
+                  : 'Not available'
+                }
+              </p>
+            </div>
+            
+            {data?.current_ride && (
+              <div className="bg-white/5 rounded-lg p-3">
+                <p className="text-white/60 text-xs">Distance to Pickup</p>
+                <p className="text-white font-medium text-sm">
+                  {calculateDistance(
+                    currentLocation,
+                    {
+                      lat: parseFloat(data.current_ride.pickup_latitude),
+                      lng: parseFloat(data.current_ride.pickup_longitude)
+                    }
+                  )} km
+                </p>
+              </div>
+            )}
           </div>
         </div>
+
+{dashboardData?.driver_status?.is_online && !dashboardData?.current_ride && (
+    <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20">
+        <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Car className="w-5 h-5 text-emerald-400" />
+                Available Rides 
+                {pendingRides.length > 0 && (
+                    <span className="bg-emerald-500 text-white text-xs px-2 py-1 rounded-full animate-pulse">
+                        {pendingRides.length} NEW
+                    </span>
+                )}
+            </h3>
+            <button 
+                onClick={onFetchAvailableRides}
+                disabled={loadingPendingRides}
+                className="text-emerald-300 hover:text-emerald-200 text-sm flex items-center gap-1 disabled:opacity-50"
+            >
+                <RefreshCw className={`w-4 h-4 ${loadingPendingRides ? 'animate-spin' : ''}`} />
+                Refresh
+            </button>
+        </div>
+        
+        {loadingPendingRides ? (
+            <div className="text-center py-8">
+                <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                <p className="text-white/60">Scanning for ride requests...</p>
+            </div>
+        ) : pendingRides.length === 0 ? (
+            <div className="text-center py-8">
+                <Car className="w-16 h-16 text-white/30 mx-auto mb-4" />
+                <p className="text-white/60 text-lg mb-2">No rides available</p>
+                <p className="text-white/40 text-sm">Ride requests will appear here when customers book</p>
+                <p className="text-white/30 text-xs mt-2">Make sure your location is enabled</p>
+            </div>
+        ) : (
+            <div className="space-y-4 max-h-96 overflow-y-auto">
+                {pendingRides.map((ride, index) => (
+                    <div 
+                        key={ride.id} 
+                        className="bg-white/5 rounded-xl p-4 border border-emerald-500/20 hover:border-emerald-500/40 transition-all duration-300 hover:bg-white/10"
+                    >
+                        <div className="flex justify-between items-start mb-3">
+                            <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <User className="w-4 h-4 text-emerald-300" />
+                                    <p className="font-semibold text-white text-lg">{ride.customer_name}</p>
+                                </div>
+                                <p className="text-white/60 text-sm">{ride.customer_phone}</p>
+                            </div>
+                            <div className="text-right">
+                                <span className="bg-yellow-500/20 text-yellow-300 px-2 py-1 rounded-full text-xs font-medium">
+                                    {ride.distance_to_pickup_km ? `${ride.distance_to_pickup_km} km away` : 'Nearby'}
+                                </span>
+                                {ride.estimated_pickup_time && (
+                                    <p className="text-white/50 text-xs mt-1">{ride.estimated_pickup_time}</p>
+                                )}
+                            </div>
+                        </div>
+                        
+                        <div className="space-y-2 text-sm mb-4">
+                            <div className="flex items-center gap-2 text-white/80">
+                                <div className="w-2 h-2 bg-green-400 rounded-full flex-shrink-0"></div>
+                                <span className="truncate">📍 {ride.pickup_address}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-white/80">
+                                <div className="w-2 h-2 bg-red-400 rounded-full flex-shrink-0"></div>
+                                <span className="truncate">🎯 {ride.dropoff_address}</span>
+                            </div>
+                        </div>
+                        
+                        <div className="flex justify-between items-center pt-3 border-t border-white/10">
+                            <div>
+                                <span className="text-emerald-300 font-bold text-xl">
+                                    KSH {ride.fare}
+                                </span>
+                                {ride.vehicle_type && (
+                                    <p className="text-white/50 text-xs mt-1">{ride.vehicle_type.toUpperCase()}</p>
+                                )}
+                            </div>
+                            <div className="flex gap-2">
+                                <button 
+                                    onClick={() => {
+                                       
+                                        console.log('Decline ride:', ride.id);
+                                        setPendingRides(prev => prev.filter(r => r.id !== ride.id));
+                                    }}
+                                    className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors text-sm"
+                                >
+                                    Decline
+                                </button>
+                                <button 
+                                    onClick={() => onAcceptRide(ride.id)}
+                                    className="bg-emerald-500 text-white px-4 py-2 rounded-lg hover:bg-emerald-600 transition-colors text-sm font-semibold flex items-center gap-2"
+                                >
+                                    <Car className="w-4 h-4" />
+                                    Accept Ride
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        )}
+    </div>
+)}
+
+<div className="bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20">
+    <h3 className="text-lg font-semibold text-white mb-4">Quick Actions</h3>
+    <div className="grid grid-cols-2 gap-4">
+        <button 
+            onClick={() => window.location.href = '/driver/location'}
+            className="bg-emerald-500/20 text-emerald-300 p-4 rounded-xl border border-emerald-500/30 hover:bg-emerald-500/30 transition-all group"
+        >
+            <MapPin className="w-6 h-6 mx-auto mb-2 group-hover:scale-110 transition-transform" />
+            <span className="text-sm font-medium">Update Location</span>
+        </button>
+        
+        
+        <button 
+      onClick={() => data?.current_ride && onOpenChat(data.current_ride)}
+      disabled={!data?.current_ride}
+      className={`p-4 rounded-xl border transition-all group ${
+        data?.current_ride
+          ? 'bg-blue-500/20 text-blue-300 border-blue-500/30 hover:bg-blue-500/30'
+          : 'bg-gray-500/20 text-gray-400 border-gray-500/30 cursor-not-allowed'
+      }`}
+    >
+      <div className="relative">
+        <MessageCircle className="w-6 h-6 mx-auto mb-2 group-hover:scale-110 transition-transform" />
+        
+        {notifications?.some(n => n.type === 'chat_message' && n.data?.ride_id === data?.current_ride?.id) && (
+          <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
+        )}
       </div>
+      <span className="text-sm font-medium">
+        {data?.current_ride ? 'Chat' : 'No Active Ride'}
+      </span>
+    </button>
+        
+       <button 
+      onClick={() => window.location.href = '/driver/earnings'}
+      className="bg-yellow-500/20 text-yellow-300 p-4 rounded-xl border border-yellow-500/30 hover:bg-yellow-500/30 transition-all group"
+    >
+      <DollarSign className="w-6 h-6 mx-auto mb-2 group-hover:scale-110 transition-transform" />
+      <span className="text-sm font-medium">Earnings</span>
+    </button>
+    
+    <button 
+      onClick={() => window.location.href = '/driver/profile'}
+      className="bg-purple-500/20 text-purple-300 p-4 rounded-xl border border-purple-500/30 hover:bg-purple-500/30 transition-all group"
+    >
+      <User className="w-6 h-6 mx-auto mb-2 group-hover:scale-110 transition-transform" />
+      <span className="text-sm font-medium">Profile</span>
+    </button>
+  </div>
+  
+  
+  {data?.current_ride && (
+    <div className="mt-4 p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-blue-300 text-sm font-medium">Quick Chat Available</p>
+          <p className="text-blue-200 text-xs">
+            Chat with {data.current_ride.customer_name}
+          </p>
+        </div>
+        <button
+          onClick={() => onOpenChat(data.current_ride)}
+          className="bg-blue-500 text-white px-3 py-1 rounded-lg text-sm hover:bg-blue-600 transition-colors flex items-center gap-1"
+        >
+          <MessageCircle className="w-3 h-3" />
+          Open Chat
+        </button>
+      </div>
+    </div>
+  )}
+</div>
+    </div>
     </div>
   );
 };
+
 
 export default DriverDash;

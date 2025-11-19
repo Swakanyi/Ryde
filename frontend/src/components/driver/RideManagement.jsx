@@ -47,8 +47,8 @@ const RideManagement = () => {
   const acceptRide = async (rideId) => {
     try {
       await DriverService.acceptRide(rideId);
-      fetchAvailableRides(); // Refresh available rides
-      // The dashboard will automatically update with the current ride
+      fetchAvailableRides(); 
+    
     } catch (error) {
       setError(error.error || 'Failed to accept ride');
     }
@@ -73,7 +73,7 @@ const RideManagement = () => {
 
   return (
     <div className="space-y-6">
-      {/* Tabs */}
+      
       <div className="flex space-x-4 border-b border-white/20">
         <button
           onClick={() => setActiveTab('available')}
@@ -104,7 +104,7 @@ const RideManagement = () => {
         </div>
       )}
 
-      {/* Available Rides */}
+      
       {activeTab === 'available' && (
         <div className="space-y-4">
           <h2 className="text-xl font-semibold text-white">Available Rides Near You</h2>
@@ -171,7 +171,6 @@ const RideManagement = () => {
         </div>
       )}
 
-      {/* Ride History */}
       {activeTab === 'history' && (
         <div className="space-y-4">
           <h2 className="text-xl font-semibold text-white">Your Ride History</h2>
