@@ -30,7 +30,12 @@ DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
+    'ryde-cdft.onrender.com',
     '.onrender.com'
+]
+CSRF_TRUSTED_ORIGINS = [
+    'https://ryde-cdft.onrender.com',
+    'https://*.onrender.com'
 ]
 
 
