@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 from datetime import timedelta
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -21,12 +22,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-phk&_#n$z5&+s**)!@&&2pke5x_ki^v6mg(3e^t&7_5ce8rg%f'
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-phk&_#n$z5&+s**)!@&&2pke5x_ki^v6mg(3e^t&7_5ce8rg%f')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1',
+    '.onrender.com'
+]
 
 
 # Application definition
@@ -95,6 +100,7 @@ AUTH_USER_MODEL = 'ryde_app.User'
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -122,9 +128,9 @@ TEMPLATES = [
 ]
 
 CLOUDINARY_STORAGE = {
-    'CLOUD_NAME': 'dh3nh9mck',
-    'API_KEY': '624374768459569', 
-    'API_SECRET': 'Kmxk4y-Qsru8x7LiMzXdSN-HPT0',
+    'CLOUD_NAME': os.environ.get('CLOUDINARY_CLOUD_NAME', 'dh3nh9mck'),
+    'API_KEY': os.environ.get('CLOUDINARY_API_KEY', '624374768459569'), 
+    'API_SECRET': os.environ.get('CLOUDINARY_API_SECRET', 'Kmxk4y-Qsru8x7LiMzXdSN-HPT0'),
 }
 
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
@@ -132,12 +138,14 @@ DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 # ASGI Configuration
 ASGI_APPLICATION = 'rydeproject.asgi.application'
 
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379')
+
 # Channel Layers (Using Redis)
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
+            "hosts": [REDIS_URL],
         },
     },
 }
@@ -195,11 +203,18 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
+STORAGES = {
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-GOOGLE_API_KEY ='AIzaSyCyJY2t8KRStAfC1tcvcoxCoj0arQD01Vc'
+GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY', 'AIzaSyCyJY2t8KRStAfC1tcvcoxCoj0arQD01Vc')
