@@ -1,0 +1,8 @@
+static_sites:
+  - name: ryde-frontend
+    buildCommand: cd frontend && npm install && npm run build
+    publishDir: frontend/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
