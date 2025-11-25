@@ -5,7 +5,8 @@ import {
   ArrowUp, ArrowDown, Search, RefreshCw, Wifi, WifiOff
 } from 'lucide-react';
 import AdminService from '../../services/adminService';
-
+import RevenueChart from './RevenueChart';
+import VehicleTypeChart from './VehicleTypeChart';
 
 const StatCard = ({ title, value, change, icon: Icon, color = 'emerald', loading }) => {
   const colors = {
@@ -56,7 +57,6 @@ const StatCard = ({ title, value, change, icon: Icon, color = 'emerald', loading
   );
 };
 
-
 const ChartContainer = ({ title, children, loading }) => {
   if (loading) {
     return (
@@ -73,11 +73,11 @@ const ChartContainer = ({ title, children, loading }) => {
         <BarChart3 className="w-5 h-5 text-emerald-400" />
         {title}
       </h3>
+      
       {children}
     </div>
   );
 };
-
 
 const ReportTable = ({ title, data, columns, loading, onViewDetails }) => {
   if (loading) {
@@ -210,8 +210,7 @@ const Reports = () => {
   const reportTypes = [
     { id: 'earnings', label: 'Earnings Report', icon: DollarSign, color: 'emerald' },
     { id: 'usage', label: 'Usage Analytics', icon: TrendingUp, color: 'blue' },
-    { id: 'drivers', label: 'Driver Performance', icon: Users, color: 'amber' },
-    { id: 'rides', label: 'Ride Analysis', icon: Car, color: 'purple' },
+    
   ];
 
   const timeRanges = [
@@ -226,16 +225,12 @@ const Reports = () => {
     try {
       setLoading(true);
       setConnectionStatus('connecting');
-      console.log('🔄 [Reports] Fetching earnings data...');
-      
       const data = await AdminService.getEarningsReport(timeRange);
-      console.log('✅ [Reports] Earnings data received:', data);
-      
       setEarningsData(data);
       setConnectionStatus('connected');
       setLastUpdated(new Date());
     } catch (error) {
-      console.error('❌ [Reports] Failed to fetch earnings report:', error);
+      console.error('Failed to fetch earnings report:', error);
       setConnectionStatus('error');
     } finally {
       setLoading(false);
@@ -246,41 +241,33 @@ const Reports = () => {
     try {
       setLoading(true);
       setConnectionStatus('connecting');
-      console.log('🔄 [Reports] Fetching usage data...');
-      
       const data = await AdminService.getUsageReport();
-      console.log('✅ [Reports] Usage data received:', data);
-      
       setUsageData(data);
       setConnectionStatus('connected');
       setLastUpdated(new Date());
     } catch (error) {
-      console.error('❌ [Reports] Failed to fetch usage report:', error);
+      console.error('Failed to fetch usage report:', error);
       setConnectionStatus('error');
     } finally {
       setLoading(false);
     }
   };
 
- 
   useEffect(() => {
     if (!isRealTime) return;
 
     const interval = setInterval(() => {
-      console.log('🔄 [Reports] Auto-refreshing data...');
       if (activeReport === 'earnings') {
         fetchEarningsReport();
       } else if (activeReport === 'usage') {
         fetchUsageReport();
       }
-    }, 30000); 
+    }, 30000);
 
     return () => clearInterval(interval);
   }, [activeReport, timeRange, isRealTime]);
 
-  
   useEffect(() => {
-    console.log('🔄 [Reports] Initial data fetch...');
     if (activeReport === 'earnings') {
       fetchEarningsReport();
     } else if (activeReport === 'usage') {
@@ -288,7 +275,6 @@ const Reports = () => {
     }
   }, [activeReport, timeRange]);
 
-  
   const earningsStats = [
     {
       title: 'Total Revenue',
@@ -332,7 +318,6 @@ const Reports = () => {
       }));
     }
     
-    
     return [
       {
         id: 1,
@@ -361,7 +346,6 @@ const Reports = () => {
     ];
   };
 
-  
   const getVehicleTypes = () => {
     if (earningsData?.by_vehicle_type && earningsData.by_vehicle_type.length > 0) {
       return earningsData.by_vehicle_type.map(vehicle => ({
@@ -372,7 +356,6 @@ const Reports = () => {
       }));
     }
     
-    
     return [
       { vehicle_type: 'standard', total_earnings: 450000, total_rides: 1250, avg_fare: 360 },
       { vehicle_type: 'premium', total_earnings: 280000, total_rides: 560, avg_fare: 500 },
@@ -380,7 +363,6 @@ const Reports = () => {
     ];
   };
 
-  
   const getPopularRoutes = () => {
     if (usageData?.popular_routes && usageData.popular_routes.length > 0) {
       return usageData.popular_routes.slice(0, 5).map(route => ({
@@ -390,7 +372,6 @@ const Reports = () => {
         avg_fare: route.avg_fare || 350
       }));
     }
-    
     
     return [
       { pickup_address: 'Westlands', dropoff_address: 'CBD', ride_count: 234, avg_fare: 350 },
@@ -423,27 +404,7 @@ const Reports = () => {
       )
     },
     { key: 'total_rides', label: 'Completed Rides' },
-    { 
-      key: 'avg_rating', 
-      label: 'Avg Rating', 
-      render: (item) => (
-        <div className="flex items-center gap-2">
-          <span className="text-white">{item.avg_rating || '4.8'}</span>
-          <div className="flex">
-            {[1, 2, 3, 4, 5].map((star) => (
-              <div
-                key={star}
-                className={`w-3 h-3 rounded-full ${
-                  star <= Math.round(item.avg_rating || 4.8)
-                    ? 'bg-yellow-400'
-                    : 'bg-white/20'
-                }`}
-              />
-            ))}
-          </div>
-        </div>
-      )
-    },
+    
   ];
 
   const vehicleTypeColumns = [
@@ -465,13 +426,7 @@ const Reports = () => {
       )
     },
     { key: 'total_rides', label: 'Total Rides' },
-    { 
-      key: 'avg_fare', 
-      label: 'Avg Fare', 
-      render: (item) => (
-        <span className="text-white/80">Ksh{Math.round(item.avg_fare || 0).toLocaleString()}</span>
-      )
-    },
+    
   ];
 
   const popularRoutesColumns = [
@@ -497,53 +452,22 @@ const Reports = () => {
 
   const renderEarningsReport = () => (
     <div className="space-y-6">
-     
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {earningsStats.map((stat, index) => (
           <StatCard key={index} {...stat} loading={loading} />
         ))}
       </div>
 
-      
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ChartContainer title="Revenue Trend" loading={loading}>
-          <div className="h-64 flex items-center justify-center">
-            {earningsData?.daily_breakdown ? (
-              <div className="text-center">
-                <BarChart3 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
-                <p className="text-white font-medium">{earningsData.daily_breakdown.length} days of data</p>
-                <p className="text-white/60 text-sm">Real revenue data loaded</p>
-              </div>
-            ) : (
-              <div className="text-center">
-                <TrendingUp className="w-12 h-12 text-white/30 mx-auto mb-3" />
-                <p className="text-white/60">Revenue chart will be displayed here</p>
-                <p className="text-white/40 text-sm">Daily revenue breakdown</p>
-              </div>
-            )}
-          </div>
+          <RevenueChart data={earningsData} loading={loading} />
         </ChartContainer>
 
         <ChartContainer title="Earnings by Vehicle Type" loading={loading}>
-          <div className="h-64 flex items-center justify-center">
-            {earningsData?.by_vehicle_type ? (
-              <div className="text-center">
-                <PieChart className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
-                <p className="text-white font-medium">{earningsData.by_vehicle_type.length} vehicle types</p>
-                <p className="text-white/60 text-sm">Real distribution data</p>
-              </div>
-            ) : (
-              <div className="text-center">
-                <PieChart className="w-12 h-12 text-white/30 mx-auto mb-3" />
-                <p className="text-white/60">Vehicle type distribution</p>
-                <p className="text-white/40 text-sm">Revenue split across vehicle categories</p>
-              </div>
-            )}
-          </div>
+          <VehicleTypeChart data={earningsData} loading={loading} />
         </ChartContainer>
       </div>
 
-     
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ReportTable
           title="Top Performing Drivers"
@@ -566,7 +490,6 @@ const Reports = () => {
 
   const renderUsageReport = () => (
     <div className="space-y-6">
-      
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Total Users"
@@ -584,14 +507,7 @@ const Reports = () => {
           color="emerald"
           loading={loading}
         />
-        <StatCard
-          title="Avg Response Time"
-          value={`${Math.round(usageData?.performance_metrics?.avg_response_time_minutes || usageData?.avg_response_time || 4.2)}min`}
-          change={-8.1}
-          icon={Clock}
-          color="amber"
-          loading={loading}
-        />
+        
         <StatCard
           title="Popular Routes"
           value={(usageData?.popular_routes?.length || 156).toLocaleString()}
@@ -602,9 +518,8 @@ const Reports = () => {
         />
       </div>
 
-      
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ChartContainer title="User Growth" loading={loading}>
+        {/* <ChartContainer title="User Growth" loading={loading}>
           <div className="h-64 flex items-center justify-center">
             {usageData?.user_metrics?.growth_data ? (
               <div className="text-center">
@@ -620,9 +535,9 @@ const Reports = () => {
               </div>
             )}
           </div>
-        </ChartContainer>
+        </ChartContainer> */}
 
-        <ChartContainer title="Ride Completion Rate" loading={loading}>
+        {/* <ChartContainer title="Ride Completion Rate" loading={loading}>
           <div className="h-64 flex items-center justify-center">
             <div className="text-center">
               <TrendingUp className="w-12 h-12 text-white/30 mx-auto mb-3" />
@@ -630,10 +545,9 @@ const Reports = () => {
               <p className="text-white/40 text-sm">Weekly ride completion performance</p>
             </div>
           </div>
-        </ChartContainer>
+        </ChartContainer> */}
       </div>
 
-      
       <ReportTable
         title="Most Popular Routes"
         data={getPopularRoutes()}
@@ -644,25 +558,9 @@ const Reports = () => {
     </div>
   );
 
-  const renderDriverPerformance = () => (
-    <div className="space-y-6">
-      <div className="text-center py-12">
-        <Users className="w-16 h-16 text-white/30 mx-auto mb-4" />
-        <p className="text-white/60 text-lg">Driver Performance Reports</p>
-        <p className="text-white/40 text-sm">Detailed driver analytics and performance metrics</p>
-      </div>
-    </div>
-  );
+  
 
-  const renderRideAnalysis = () => (
-    <div className="space-y-6">
-      <div className="text-center py-12">
-        <Car className="w-16 h-16 text-white/30 mx-auto mb-4" />
-        <p className="text-white/60 text-lg">Ride Analysis Reports</p>
-        <p className="text-white/40 text-sm">Comprehensive ride data and trends analysis</p>
-      </div>
-    </div>
-  );
+  
 
   const renderReportContent = () => {
     switch (activeReport) {
@@ -670,17 +568,12 @@ const Reports = () => {
         return renderEarningsReport();
       case 'usage':
         return renderUsageReport();
-      case 'drivers':
-        return renderDriverPerformance();
-      case 'rides':
-        return renderRideAnalysis();
       default:
         return renderEarningsReport();
     }
   };
 
   const handleRefresh = () => {
-    console.log('🔄 [Reports] Manual refresh triggered');
     if (activeReport === 'earnings') {
       fetchEarningsReport();
     } else if (activeReport === 'usage') {
@@ -690,12 +583,10 @@ const Reports = () => {
 
   const handleToggleRealTime = () => {
     setIsRealTime(!isRealTime);
-    console.log(`🔄 [Reports] Real-time mode: ${!isRealTime ? 'ENABLED' : 'DISABLED'}`);
   };
 
   return (
     <div className="space-y-6">
-      
       <div className="flex justify-between items-center">
         <div>
           <div className="flex items-center gap-3 mb-2">
@@ -728,7 +619,6 @@ const Reports = () => {
         </div>
       </div>
 
-      
       <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-4 border border-white/20">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {reportTypes.map((report) => (
@@ -748,7 +638,6 @@ const Reports = () => {
         </div>
       </div>
 
-      
       <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -802,7 +691,6 @@ const Reports = () => {
         </div>
       </div>
 
-      
       {renderReportContent()}
     </div>
   );

@@ -1,5 +1,6 @@
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
+from cloudinary_storage.storage import RawMediaCloudinaryStorage
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -45,18 +46,21 @@ class User(AbstractUser):
         upload_to='driver_documents/licenses/', 
         null=True, 
         blank=True,
+        storage=RawMediaCloudinaryStorage(),
         help_text="Upload a clear photo of your valid driving license"
     )
     national_id_file = models.FileField(
         upload_to='driver_documents/national_ids/', 
         null=True, 
         blank=True,
+        storage=RawMediaCloudinaryStorage(),
         help_text="Upload a clear photo of your national ID"
     )
     logbook_file = models.FileField(
         upload_to='driver_documents/logbooks/', 
         null=True, 
         blank=True,
+        storage=RawMediaCloudinaryStorage(),
         help_text="Upload a clear photo of your vehicle logbook"
     )
     license_expiry = models.DateField(null=True, blank=True)
@@ -160,6 +164,21 @@ class Ride(models.Model):
         ('xl', 'XL'),
         ('boda', 'Boda'),
     ]
+    SERVICE_TYPES = [
+        ('ride', 'Ride'),
+        ('package', 'Package Delivery'),
+        ('food', 'Food Delivery'),
+        ('document', 'Document Courier'),
+    ]
+
+    service_type = models.CharField(max_length=20, choices=SERVICE_TYPES, default='ride')
+    
+   
+    package_description = models.TextField(blank=True, null=True)
+    package_size = models.CharField(max_length=100, blank=True, null=True)  
+    recipient_name = models.CharField(max_length=100, blank=True, null=True)
+    recipient_phone = models.CharField(max_length=15, blank=True, null=True)
+    delivery_instructions = models.TextField(blank=True, null=True)
     
     customer = models.ForeignKey(
         User, 
@@ -328,7 +347,7 @@ class AdminNotification(models.Model):
     message = models.TextField()
     priority = models.CharField(max_length=10, choices=PRIORITY_LEVELS, default='medium')
     
-    # Related objects (optional)
+    
     related_user = models.ForeignKey(
         User, 
         on_delete=models.CASCADE, 

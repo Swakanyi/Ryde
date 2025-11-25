@@ -9,6 +9,7 @@ import AdminService from '../../services/adminService';
 const Documents = ({ driver, onClose, onApprove }) => {
   const [documents, setDocuments] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [downloadLoading, setDownloadLoading] = useState({});
   const [approvalData, setApprovalData] = useState({
     action: 'approve',
     vehicle_type: driver?.user_type === 'boda_rider' ? 'boda' : 'economy',
@@ -70,61 +71,85 @@ const Documents = ({ driver, onClose, onApprove }) => {
     }
   };
 
-  const downloadDocument = (url, filename) => {
-    if (url) {
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      link.click();
-    }
-  };
+const downloadDocument = async (documentType, documentUrl, filename) => {
+  try {
+    const link = document.createElement('a');
+    link.href = documentUrl;
+    
+   
+    const betterFilename = `${driver.first_name}_${driver.last_name}_${documentType}.jpg`;
+    link.download = betterFilename;
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+  } catch (error) {
+    console.error('Download failed:', error);
+    window.open(documentUrl, '_blank');
+  }
+};
 
-  const DocumentView = ({ title, documentUrl, icon: Icon, filename }) => (
-    <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <Icon className="w-4 h-4 text-emerald-400" />
-          <h4 className="text-white font-medium">{title}</h4>
-        </div>
-        <div className="flex gap-2">
-          {documentUrl ? (
-            <>
-              <button
-                onClick={() => window.open(documentUrl, '_blank')}
-                className="p-1 text-white/60 hover:text-white hover:bg-white/10 rounded transition-colors"
-                title="View document"
-              >
-                <Eye className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => downloadDocument(documentUrl, filename)}
-                className="p-1 text-white/60 hover:text-white hover:bg-white/10 rounded transition-colors"
-                title="Download document"
-              >
-                <Download className="w-4 h-4" />
-              </button>
-            </>
-          ) : (
-            <span className="text-red-400 text-sm">Missing</span>
-          )}
-        </div>
+const DocumentView = ({ title, documentUrl, icon: Icon, filename, documentType }) => (
+  <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+    <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center gap-2">
+        <Icon className="w-4 h-4 text-emerald-400" />
+        <h4 className="text-white font-medium">{title}</h4>
       </div>
-      
-      {documentUrl ? (
-        <div className="aspect-video bg-black/20 rounded-lg border border-white/10 flex items-center justify-center">
+      <div className="flex gap-2">
+        {documentUrl ? (
+          <>
+            <button
+              onClick={() => window.open(documentUrl, '_blank')}
+              className="p-1 text-white/60 hover:text-white hover:bg-white/10 rounded transition-colors"
+              title="View document"
+            >
+              <Eye className="w-4 h-4" />
+            </button>
+            <button
+  onClick={() => downloadDocument(documentType, documentUrl, filename)}
+  disabled={downloadLoading[documentType]}
+  className="p-1 text-white/60 hover:text-white hover:bg-white/10 rounded transition-colors disabled:opacity-50"
+  title="Download document"
+>
+  {downloadLoading[documentType] ? (
+    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+  ) : (
+    <Download className="w-4 h-4" />
+  )}
+</button>
+          </>
+        ) : (
+          <span className="text-red-400 text-sm">Missing</span>
+        )}
+      </div>
+    </div>
+    
+    {documentUrl ? (
+      <div className="aspect-video bg-black/20 rounded-lg border border-white/10 flex items-center justify-center">
+        
+        {documentUrl.match(/\.(jpg|jpeg|png|gif)$/i) ? (
+          <img 
+            src={documentUrl} 
+            alt={title}
+            className="max-w-full max-h-full object-contain rounded-lg"
+          />
+        ) : (
           <iframe 
             src={documentUrl} 
             className="w-full h-full rounded-lg"
             title={title}
           />
-        </div>
-      ) : (
-        <div className="aspect-video bg-red-500/10 border border-red-500/20 rounded-lg flex items-center justify-center">
-          <AlertCircle className="w-8 h-8 text-red-400" />
-        </div>
-      )}
-    </div>
-  );
+        )}
+      </div>
+    ) : (
+      <div className="aspect-video bg-red-500/10 border border-red-500/20 rounded-lg flex items-center justify-center">
+        <AlertCircle className="w-8 h-8 text-red-400" />
+      </div>
+    )}
+  </div>
+);
 
   if (!driver) return null;
 
@@ -199,29 +224,29 @@ const Documents = ({ driver, onClose, onApprove }) => {
           </div>
 
           
-          <div>
-            <h3 className="text-white font-semibold mb-4">Uploaded Documents</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <DocumentView
-                title="Driver License"
-                documentUrl={documents?.driver_license_file_url}
-                icon={IdCard}
-                filename={`${driver.first_name}_license.pdf`}
-              />
-              <DocumentView
-                title="National ID"
-                documentUrl={documents?.national_id_file_url}
-                icon={FileText}
-                filename={`${driver.first_name}_national_id.pdf`}
-              />
-              <DocumentView
-                title="Vehicle Logbook"
-                documentUrl={documents?.logbook_file_url}
-                icon={Car}
-                filename={`${driver.first_name}_logbook.pdf`}
-              />
-            </div>
-          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+  <DocumentView
+    title="Driver License"
+    documentUrl={documents?.driver_license_file_url}
+    icon={IdCard}
+    filename={`${driver.first_name}_license.pdf`}
+    documentType="driver_license"
+  />
+  <DocumentView
+    title="National ID"
+    documentUrl={documents?.national_id_file_url}
+    icon={FileText}
+    filename={`${driver.first_name}_national_id.pdf`}
+    documentType="national_id"
+  />
+  <DocumentView
+    title="Vehicle Logbook"
+    documentUrl={documents?.logbook_file_url}
+    icon={Car}
+    filename={`${driver.first_name}_logbook.pdf`}
+    documentType="logbook"
+  />
+</div>
 
           
           <div className="bg-white/5 rounded-xl p-4 border border-white/10">

@@ -9,10 +9,10 @@ import DashboardView from './DashboardView';
 import UserManagement from './UserManagement';
 import RideManagement from './RideManagement';
 import DriverManagement from './DriverManagement';
-import EmergencyManagement from './EmergencyManagement';
+// import EmergencyManagement from './EmergencyManagement';
 import Reports from './Reports';
 import Notifications from './Notifications';
-import SystemSettings from './SystemSettings';
+
 import AuthService from '../../services/auth';
 
 
@@ -77,9 +77,9 @@ const NotificationBell = ({ notifications, unreadCount, onMarkAsRead, onClearNot
                       {notification.type === 'new_driver' && (
                         <UserCheck className="w-4 h-4 text-emerald-500" />
                       )}
-                      {notification.type === 'new_emergency' && (
+                      {/* {notification.type === 'new_emergency' && (
                         <AlertTriangle className="w-4 h-4 text-red-500" />
-                      )}
+                      )} */}
                       {notification.type === 'system_alert' && (
                         <Shield className="w-4 h-4 text-blue-500" />
                       )}
@@ -205,10 +205,10 @@ const AdminDashboard = () => {
     { id: 'users', label: 'Users', icon: Users },
     { id: 'rides', label: 'Rides', icon: Car },
     { id: 'drivers', label: 'Drivers', icon: UserCheck },
-    { id: 'emergency', label: 'Emergency', icon: AlertTriangle },
+    // { id: 'emergency', label: 'Emergency', icon: AlertTriangle },
     { id: 'reports', label: 'Reports', icon: TrendingUp },
     { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'settings', label: 'Settings', icon: Settings }
+    
   ];
 
   return (
@@ -305,10 +305,10 @@ const AdminDashboard = () => {
           {activeTab === 'users' && <UserManagement />}
           {activeTab === 'rides' && <RideManagement />}
           {activeTab === 'drivers' && <DriverManagement />}
-          {activeTab === 'emergency' && <EmergencyManagement />}
+          {/* {activeTab === 'emergency' && <EmergencyManagement />} */}
           {activeTab === 'reports' && <Reports />}
           {activeTab === 'notifications' && <Notifications />}
-          {activeTab === 'settings' && <SystemSettings />}
+          
         </main>
       </div>
     </div>

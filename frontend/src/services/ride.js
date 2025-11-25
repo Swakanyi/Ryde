@@ -2,9 +2,57 @@ import axios from 'axios';
 import AuthService from './auth';
 
 
-const API_URL = 'http://localhost:8000/api/auth';
+const API_URL = 'http://localhost:8000/api/auth'; 
+class RideService {
+  
+ 
+  async reverseGeocode(lat, lng) {
+    try {
+      const response = await axios.post(`${API_URL}/reverse-geocode/`, {
+        lat: lat,
+        lng: lng
+      }, {
+        headers: AuthService.getAuthHeader()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Reverse geocoding error:', error);
+      
+      return {
+        address: `Current Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
+        display_name: `Current Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
+        lat: lat,
+        lng: lng
+      };
+    }
+  }
 
-class Ride {
+  
+  async setCurrentLocation(locationData) {
+    try {
+      const response = await axios.post(`${API_URL}/set-current-location/`, locationData, {
+        headers: AuthService.getAuthHeader()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Set current location error:', error);
+      throw error.response?.data || error;
+    }
+  }
+
+ 
+  async calculateRoute(routeData) {
+    try {
+      const response = await axios.post(`${API_URL}/rides/calculate-route/`, routeData, {
+        headers: AuthService.getAuthHeader()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Route calculation error:', error);
+      throw error.response?.data || error;
+    }
+  }
+
   
   async requestRide(rideData) {
     try {
@@ -17,7 +65,6 @@ class Ride {
     }
   }
 
- 
   async getRideMessages(rideId) {
     try {
       const response = await axios.get(`${API_URL}/rides/${rideId}/messages/`, {
@@ -30,7 +77,6 @@ class Ride {
     }
   }
 
- 
   async getRideHistory() {
     try {
       const response = await axios.get(`${API_URL}/rides/my-rides/`, {
@@ -55,7 +101,6 @@ class Ride {
     }
   }
 
-  
   async getAvailableRides() {
     try {
       const response = await axios.get(`${API_URL}/rides/available/`, {
@@ -67,10 +112,9 @@ class Ride {
     }
   }
 
-  
   async acceptRide(rideId) {
     try {
-      const response = await axios.post(`${API_URL}/rides/${ride_id}/accept/`, {}, {
+      const response = await axios.post(`${API_URL}/rides/${rideId}/accept/`, {}, {
         headers: AuthService.getAuthHeader()
       });
       return response.data;
@@ -91,7 +135,6 @@ class Ride {
     }
   }
 
- 
   async getUserRides() {
     try {
       const response = await axios.get(`${API_URL}/rides/my-rides/`, {
@@ -103,7 +146,6 @@ class Ride {
     }
   }
 
- 
   async getRideDetail(rideId) {
     try {
       const response = await axios.get(`${API_URL}/rides/${rideId}/`, {
@@ -115,7 +157,6 @@ class Ride {
     }
   }
 
-  
   async updateDriverLocation(locationData) {
     try {
       const response = await axios.post(`${API_URL}/driver/location/`, locationData, {
@@ -177,6 +218,45 @@ class Ride {
       throw error.response?.data || error;
     }
   }
+
+  
+  async declineRide(rideId) {
+    try {
+      const response = await axios.post(`${API_URL}/rides/${rideId}/decline/`, {}, {
+        headers: AuthService.getAuthHeader()
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error;
+    }
+  }
+
+ 
+  async testGoogleAPI() {
+    try {
+      const response = await axios.get(`${API_URL}/test-google-api/`, {
+        headers: AuthService.getAuthHeader()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Google API test error:', error);
+      throw error.response?.data || error;
+    }
+  }
+
+  
+  async getNearbyDrivers(lat, lng, radius = 5) {
+    try {
+      const response = await axios.get(`${API_URL}/map/nearby-drivers/`, {
+        params: { lat, lng, radius },
+        headers: AuthService.getAuthHeader()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching nearby drivers:', error);
+      return [];
+    }
+  }
 }
 
-export default new Ride();
+export default new RideService();

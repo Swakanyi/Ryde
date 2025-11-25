@@ -1,16 +1,17 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import { Link } from 'react-router-dom';
 import { 
   Home, User, Phone, MessageCircle, MapPin, Navigation, DollarSign, Shield,
-  Clock, Car, Bike, AlertCircle, Search, Star, Package, Bell, X, Edit3, Save, Mail,
-  CreditCard, Smartphone, Info
+  Clock, Car, Bike, AlertCircle, Search, Star, Package, Bell, X, Edit3, Save, Mail, CheckCircle,
+  CreditCard, Smartphone, Info, Upload, Download, Mic, Square, Bot 
 } from 'lucide-react';
 import RideService from '../services/ride';
 import websocketService from '../services/websocketService';
 import UserService from '../services/user';
 import ChatService from '../services/chatService';
+import VoiceAssistant from '../hooks/voiceAssistant';
 import 'leaflet/dist/leaflet.css';
 
 //default markers in react-leaflet
@@ -225,7 +226,7 @@ const AlertSystem = ({ alerts, onRemoveAlert }) => {
 };
 
 
-const ChatModal = ({ showChat, onClose, chatMessages, newMessage, onMessageChange, onSendMessage, driverInfo }) => {
+const ChatModal = ({ showChat, onClose, chatMessages, newMessage, onMessageChange, onSendMessage, driverInfo, currentUserType }) => {
   const chatEndRef = useRef();
 
   useEffect(() => {
@@ -241,8 +242,10 @@ const ChatModal = ({ showChat, onClose, chatMessages, newMessage, onMessageChang
       <div className="bg-white rounded-2xl w-full max-w-md h-96 flex flex-col">
         <div className="p-4 border-b flex justify-between items-center">
           <div>
-            <h3 className="font-bold text-gray-800">Chat with Driver</h3>
-            {driverInfo && (
+            <h3 className="font-bold text-gray-800">
+              {currentUserType === 'customer' ? 'Chat with Driver' : 'Chat with Customer'}
+            </h3>
+            {driverInfo && currentUserType === 'customer' && (
               <p className="text-sm text-gray-600">
                 {driverInfo.first_name} {driverInfo.last_name}
               </p>
@@ -261,24 +264,24 @@ const ChatModal = ({ showChat, onClose, chatMessages, newMessage, onMessageChang
             <div className="text-center text-gray-500 mt-8">
               <MessageCircle className="w-12 h-12 mx-auto mb-3 text-gray-300" />
               <p>No messages yet</p>
-              <p className="text-sm">Start a conversation with your driver</p>
+              <p className="text-sm">Start a conversation</p>
             </div>
           ) : (
             chatMessages.map((msg) => (
               <div
                 key={msg.id}
-                className={`mb-3 ${msg.sender === 'customer' ? 'text-right' : 'text-left'}`}
+                className={`mb-3 ${msg.isCurrentUser ? 'text-right' : 'text-left'}`}
               >
                 <div
                   className={`inline-block px-4 py-2 rounded-2xl max-w-xs ${
-                    msg.sender === 'customer'
-                      ? 'bg-emerald-500 text-white'
+                    msg.isCurrentUser
+                      ? 'bg-blue-500 text-white'
                       : 'bg-gray-200 text-gray-800'
                   }`}
                 >
                   <p className="text-sm">{msg.message}</p>
                   <p className="text-xs opacity-70 mt-1">
-                    {new Date(msg.timestamp).toLocaleTimeString()}
+                    {msg.isCurrentUser ? 'You' : msg.sender_name} • {new Date(msg.timestamp).toLocaleTimeString()}
                   </p>
                 </div>
               </div>
@@ -294,11 +297,11 @@ const ChatModal = ({ showChat, onClose, chatMessages, newMessage, onMessageChang
             onChange={onMessageChange}
             onKeyPress={(e) => e.key === 'Enter' && onSendMessage()}
             placeholder="Type a message..."
-            className="flex-1 border rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500"
+            className="flex-1 border rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
           />
           <button
             onClick={onSendMessage}
-            className="bg-emerald-500 text-white px-4 py-2 rounded-lg hover:bg-emerald-600 transition-colors"
+            className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors"
           >
             Send
           </button>
@@ -383,6 +386,278 @@ const EmergencyContactModal = ({ show, onClose, contacts }) => {
               Safety Checklist
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const CourierModal = ({ show, onClose, onRequestCourier, hasValidLocations, pickup, dropoff }) => {
+  const [packageDetails, setPackageDetails] = useState({
+    package_description: '',
+    package_size: 'small',
+    recipient_name: '',
+    recipient_phone: '',
+    delivery_instructions: '',
+    selected_vehicle: 'courier_bike' 
+  });
+
+  const packageSizes = [
+    { value: 'small', label: 'Small Package (up to 1kg)', suitable_vehicles: ['courier_bike', 'courier_car'] },
+    { value: 'medium', label: 'Medium Package (1-5kg)', suitable_vehicles: ['courier_bike', 'courier_car'] },
+    { value: 'large', label: 'Large Package (5-15kg)', suitable_vehicles: ['courier_car'] },
+    { value: 'extra_large', label: 'Extra Large (15kg+)', suitable_vehicles: ['courier_car'] },
+    { value: 'document', label: 'Documents', suitable_vehicles: ['courier_bike', 'courier_car'] }
+  ];
+
+  const courierVehicles = [
+    {
+      id: 'courier_bike',
+      name: 'Courier Bike',
+      icon: '🏍️',
+      description: 'Fast delivery for small packages',
+      max_weight: 'Up to 5kg',
+      base_price: 60,
+      suitable_for: ['document', 'small', 'medium']
+    },
+    {
+      id: 'courier_car', 
+      name: 'Courier Car',
+      icon: '🚗',
+      description: 'Larger vehicles for big packages',
+      max_weight: 'Up to 25kg',
+      base_price: 120,
+      suitable_for: ['document', 'small', 'medium', 'large', 'extra_large']
+    }
+  ];
+
+  
+  const availableVehicles = courierVehicles.filter(vehicle => 
+    vehicle.suitable_for.includes(packageDetails.package_size)
+  );
+
+  const handleSubmit = () => {
+    if (!hasValidLocations) {
+      alert('Please select pickup and dropoff locations first on the main ride tab');
+      return;
+    }
+
+    if (!packageDetails.package_description || !packageDetails.recipient_name || !packageDetails.recipient_phone) {
+      alert('Please fill in package description, recipient name and phone');
+      return;
+    }
+
+    onRequestCourier(packageDetails);
+    onClose();
+  };
+
+  if (!show) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <Package className="w-6 h-6 text-blue-500" />
+              <h3 className="text-lg font-bold text-gray-800">Send a Package</h3>
+            </div>
+            <button 
+              onClick={onClose}
+              className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <p className="text-gray-600 text-sm mt-2">
+            Fill in package details for delivery
+          </p>
+        </div>
+
+        <div className="p-6 space-y-4">
+         
+          {!hasValidLocations ? (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-yellow-800">
+                <AlertCircle className="w-4 h-4" />
+                <span className="text-sm font-medium">Locations Required</span>
+              </div>
+              <p className="text-yellow-700 text-sm mt-1">
+                Please select pickup and dropoff locations on the main ride tab first
+              </p>
+            </div>
+          ) : (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-green-800">
+                <MapPin className="w-4 h-4" />
+                <span className="text-sm font-medium">Locations Set</span>
+              </div>
+              <div className="text-green-700 text-sm mt-1 space-y-1">
+                <p><strong>From:</strong> {pickup}</p>
+                <p><strong>To:</strong> {dropoff}</p>
+              </div>
+            </div>
+          )}
+
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              What are you sending? *
+            </label>
+            <input
+              type="text"
+              value={packageDetails.package_description}
+              onChange={(e) => setPackageDetails(prev => ({ 
+                ...prev, 
+                package_description: e.target.value 
+              }))}
+              placeholder="e.g., Documents, Electronics, Food, Clothes, etc."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+            />
+          </div>
+
+         
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Package Size *
+            </label>
+            <select
+              value={packageDetails.package_size}
+              onChange={(e) => setPackageDetails(prev => ({ 
+                ...prev, 
+                package_size: e.target.value,
+                
+                selected_vehicle: availableVehicles.some(v => v.id === prev.selected_vehicle) 
+                  ? prev.selected_vehicle 
+                  : availableVehicles[0]?.id || ''
+              }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+            >
+              {packageSizes.map(size => (
+                <option key={size.value} value={size.value}>
+                  {size.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-3">
+              Select Courier Type
+            </label>
+            <div className="space-y-2">
+              {availableVehicles.map(vehicle => (
+                <button
+                  key={vehicle.id}
+                  type="button"
+                  onClick={() => setPackageDetails(prev => ({ 
+                    ...prev, 
+                    selected_vehicle: vehicle.id 
+                  }))}
+                  className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
+                    packageDetails.selected_vehicle === vehicle.id
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-300 bg-gray-50 hover:border-gray-400'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">{vehicle.icon}</span>
+                      <div>
+                        <p className="font-semibold text-gray-800">{vehicle.name}</p>
+                        <p className="text-xs text-gray-600">{vehicle.description}</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Max weight: {vehicle.max_weight} • Base: KSH {vehicle.base_price}
+                        </p>
+                      </div>
+                    </div>
+                    {packageDetails.selected_vehicle === vehicle.id && (
+                      <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center border border-white">
+                        <span className="text-white text-xs">✓</span>
+                      </div>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          
+          <div className="border-t pt-4">
+            <h4 className="font-semibold text-gray-800 mb-3">Recipient Information</h4>
+            
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Recipient Name *
+                </label>
+                <input
+                  type="text"
+                  value={packageDetails.recipient_name}
+                  onChange={(e) => setPackageDetails(prev => ({ 
+                    ...prev, 
+                    recipient_name: e.target.value 
+                  }))}
+                  placeholder="Full name of recipient"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Recipient Phone *
+                </label>
+                <input
+                  type="tel"
+                  value={packageDetails.recipient_phone}
+                  onChange={(e) => setPackageDetails(prev => ({ 
+                    ...prev, 
+                    recipient_phone: e.target.value 
+                  }))}
+                  placeholder="07XX XXX XXX"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+          </div>
+
+         
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Delivery Instructions
+            </label>
+            <textarea
+              value={packageDetails.delivery_instructions}
+              onChange={(e) => setPackageDetails(prev => ({ 
+                ...prev, 
+                delivery_instructions: e.target.value 
+              }))}
+              placeholder="Special instructions for the driver (optional)"
+              rows={2}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+            />
+          </div>
+        </div>
+
+        <div className="p-6 border-t flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!hasValidLocations || availableVehicles.length === 0}
+            className={`flex-1 py-3 rounded-lg transition-colors font-medium ${
+              hasValidLocations && availableVehicles.length > 0
+                ? 'bg-blue-500 text-white hover:bg-blue-600' 
+                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            }`}
+          >
+            Request Courier
+          </button>
         </div>
       </div>
     </div>
@@ -509,6 +784,8 @@ const ScheduleRideModal = ({ show, onClose, onScheduleRide }) => {
     </div>
   );
 };
+
+
 
 
 const ShareRideModal = ({ show, onClose, activeRide }) => {
@@ -894,6 +1171,17 @@ const CustomerDash = () => {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [alerts, setAlerts] = useState([]);
   const [allVehicleFares, setAllVehicleFares] = useState({});
+  const [showCourierModal, setShowCourierModal] = useState(false);
+  const [packageType, setPackageType] = useState('send'); 
+  const [packageDescription, setPackageDescription] = useState('');
+  const [recipientName, setRecipientName] = useState('');
+  const [recipientPhone, setRecipientPhone] = useState('');
+  const [deliveryInstructions, setDeliveryInstructions] = useState('');
+  const [packageSize, setPackageSize] = useState('medium');
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [showVoiceAssistant, setShowVoiceAssistant] = useState(false);
+const [voiceCommandResult, setVoiceCommandResult] = useState(null);
+  
 
   const addAlert = (alert) => {
     const newAlert = {
@@ -1072,6 +1360,94 @@ const handleSavePersonalInfo = async () => {
       title: 'Update Failed',
       message: error.message || 'Failed to update profile. Please try again.',
       data: { error: error.message }
+    });
+  } finally {
+    setLoading(false);
+  }
+};
+
+const handleCourierRequest = async (packageData) => {
+  try {
+    
+    if (!pickupCoords || !dropoffCoords) {
+      setError('Please select both pickup and dropoff locations first');
+      return;
+    }
+
+    if (!pickup || !dropoff) {
+      setError('Please enter both pickup and dropoff addresses');
+      return;
+    }
+
+    setLoading(true);
+    
+    
+    const courierRequest = {
+      pickup_address: pickup,
+      dropoff_address: dropoff,
+      pickup_lat: pickupCoords[0],
+      pickup_lng: pickupCoords[1],
+      dropoff_lat: dropoffCoords[0],
+      dropoff_lng: dropoffCoords[1],
+      vehicle_type: packageData.selected_vehicle, 
+      service_type: 'courier', 
+      estimated_fare: fareEstimate?.total || 0, 
+      
+      
+      package_description: packageData.package_description,
+      package_size: packageData.package_size,
+      recipient_name: packageData.recipient_name,
+      recipient_phone: packageData.recipient_phone,
+      delivery_instructions: packageData.delivery_instructions
+    };
+
+    console.log('🟡 [Courier] Final request data:', courierRequest);
+    
+    const result = await RideService.requestRide(courierRequest);
+    
+    setActiveRide(result);
+    setRideStatus('requested');
+    
+    addNotification({
+      type: 'package_requested',
+      title: 'Package Delivery Requested',
+      message: `Looking for available couriers...`,
+      data: result
+    });
+
+    console.log('✅ Courier request successful:', result);
+    
+  } catch (error) {
+    console.error('❌ Courier request error:', error);
+    console.error('❌ Full error object:', error);
+    console.error('❌ Error response data:', error.response?.data);
+    
+    
+    const errorData = error.response?.data;
+    let errorMessage = 'Failed to request courier service. Please try again.';
+    
+    if (errorData) {
+     
+      if (errorData.service_type) {
+        errorMessage = `Service type error: ${errorData.service_type[0]}`;
+      } else if (errorData.vehicle_type) {
+        errorMessage = `Vehicle type error: ${errorData.vehicle_type[0]}`;
+      } else if (errorData.error) {
+        errorMessage = errorData.error;
+      } else if (typeof errorData === 'string') {
+        errorMessage = errorData;
+      }
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    setError(errorMessage);
+    
+    addAlert({
+      type: 'error',
+      title: 'Courier Request Failed',
+      message: errorMessage,
+      autoClose: true
     });
   } finally {
     setLoading(false);
@@ -1632,24 +2008,70 @@ const handleRideStatusUpdate = (data) => {
     setDriverLocation({ lat: data.lat, lng: data.lng });
   };
 
+
+  
+  
+const handleVoiceCommand = async (command) => {
+  try {
+    console.log('🎤 Voice command processed:', command);
+    
+    
+    if (command.pickup_address) {
+      setPickup(command.pickup_address);
+    }
+    if (command.dropoff_address) {
+      setDropoff(command.dropoff_address);
+    }
+    
+    
+    if (command.vehicle_type) {
+      setSelectedVehicle(command.vehicle_type);
+    }
+    
+    
+    if (command.service_type === 'courier') {
+      setActiveTab('courier');
+     
+      if (command.package_description) {
+        setPackageDescription(command.package_description);
+      }
+    } else {
+      setActiveTab('ride');
+    }
+    
+   
+    setShowVoiceAssistant(false);
+    
+   
+    addNotification({
+      type: 'voice_command',
+      title: 'Voice Command Processed',
+      message: `Ready to book ${command.type} to ${command.dropoff_address}`,
+      data: command
+    });
+    
+  } catch (error) {
+    console.error('Voice command error:', error);
+    addAlert({
+      type: 'error',
+      title: 'Voice Command Failed',
+      message: error.message || 'Failed to process voice command',
+      autoClose: true
+    });
+  }
+};
+
+
  
+
 const handleChatMessage = (data) => {
-  console.log('💬 [Customer] New chat message received - FULL DATA:', data);
+  console.log('💬 [Customer] New chat message received:', data);
   
   
-  const newChatMessage = {
-    id: Date.now() + Math.random(),
-    message: data.message || data.content,
-    sender: data.sender_type || data.sender || 'driver',
-    timestamp: data.timestamp || new Date().toISOString(),
-    sender_name: data.sender_name || 'Driver',
-    isCurrentUser: false,
-    ride_id: data.ride_id
-  };
+  const formattedMessage = ChatService.formatMessage(data, 'customer');
   
-  console.log('✅ [Customer] Message added to chat:', newChatMessage);
-  setChatMessages(prev => [...prev, newChatMessage]);
-  
+  console.log('✅ [Customer] Formatted message:', formattedMessage);
+  setChatMessages(prev => [...prev, formattedMessage]);
   
   if (!showChat) {
     addNotification({
@@ -1660,6 +2082,7 @@ const handleChatMessage = (data) => {
     });
   }
 };
+
 
 
 useEffect(() => {
@@ -1678,40 +2101,100 @@ useEffect(() => {
     console.log('❌ [CustomerDash] Missing credentials');
     return;
   }
-    
+  
   let isMounted = true;
   
-  const setupWebSocket = async () => {
-    if (!isMounted) return;
-    
-    try {
-      
-      websocketService.clearAllHandlers();
-      
-     
-      websocketService.onMessage('ride_accepted', handleRideAccepted);
-      websocketService.onMessage('ride_status_update', handleRideStatusUpdate);
-      websocketService.onMessage('location_update', handleDriverLocationUpdate);
-      websocketService.onMessage('driver_message', handleChatMessage);
-      websocketService.onMessage('driver_arrived', handleDriverArrived);
-      websocketService.onMessage('connection_established', handleConnectionEstablished);
-      websocketService.onMessage('driver_location', handleDriverLocationUpdate);
-      websocketService.onMessage('ride_started', handleRideStatusUpdate);
-      websocketService.onMessage('ride_completed', handleRideStatusUpdate);
-      websocketService.onMessage('ride_declined', handleRideDeclined);
-      
-      if (!websocketService.isConnected() && !websocketService.isConnecting) {
-        setConnectionState('connecting');
-        await websocketService.connect('customer', customerId, token);
-      } else {
-        setConnectionState(websocketService.getConnectionState());
-      }
-    } catch (error) {
-      console.error('❌ [CustomerDash] WebSocket setup error:', error);
-      setConnectionState('error');
-    }
-  };
 
+const setupWebSocket = async () => {
+  if (!isMounted) return;
+  
+  try {
+   
+    websocketService.clearComponentHandlers('CustomerDash');
+    
+   
+    websocketService.registerHandler('ride_accepted', (data) => {
+      console.log('✅ [Customer] Ride accepted with data:', data);
+      
+    
+      const formattedData = {
+        ride_id: data.ride_id,
+        driver_id: data.driver_id,
+        driver_name: data.driver_name,
+        driver_phone: data.driver_phone,
+        vehicle_type: data.vehicle_type,
+        license_plate: data.license_plate,
+        timestamp: data.timestamp
+      };
+      
+      handleRideAccepted(formattedData);
+    }, 'CustomerDash');
+
+    websocketService.registerHandler('ride_status_update', (data) => {
+      console.log('🔄 [Customer] Ride status update:', data);
+      handleRideStatusUpdate(data);
+    }, 'CustomerDash');
+
+    websocketService.registerHandler('location_update', (data) => {
+      console.log('📍 [Customer] Driver location update:', data);
+      handleDriverLocationUpdate(data);
+    }, 'CustomerDash');
+
+
+websocketService.registerHandler('driver_message', (data) => {
+  console.log('💬 [Customer Frontend] Driver message received:', data);
+  
+  const formattedMessage = {
+    id: Date.now() + Math.random(),
+    message: data.message,
+    sender: 'driver',
+    timestamp: data.timestamp,
+    sender_name: data.sender_name || 'Driver',
+    isCurrentUser: false,
+    ride_id: data.ride_id
+  };
+  
+  console.log('💬 [Customer Frontend] Adding message to chat:', formattedMessage);
+  
+  
+  setChatMessages(prev => [...prev, formattedMessage]);
+  
+  
+  if (!showChat) {
+    addNotification({
+      type: 'driver_message',
+      title: 'New Message from Driver',
+      message: data.message,
+      data: data
+    });
+  }
+}, 'CustomerDash');
+
+    websocketService.registerHandler('driver_arrived', (data) => {
+      console.log('✅ [Customer] Driver arrived:', data);
+      handleDriverArrived(data);
+    }, 'CustomerDash');
+
+    websocketService.registerHandler('connection_established', handleConnectionEstablished, 'CustomerDash');
+    
+    websocketService.registerHandler('ride_declined', (data) => {
+      console.log('❌ [Customer] Ride declined:', data);
+      handleRideDeclined(data);
+    }, 'CustomerDash');
+
+    if (!websocketService.isConnected() && !websocketService.isConnecting) {
+      setConnectionState('connecting');
+      await websocketService.connect('customer', customerId, token);
+    } else {
+      setConnectionState(websocketService.getConnectionState());
+    }
+  } catch (error) {
+    console.error('❌ [CustomerDash] WebSocket setup error:', error);
+    setConnectionState('error');
+  }
+};
+
+ 
   if (customerId && token && userType === 'customer') {
     setupWebSocket();
   }
@@ -1728,12 +2211,9 @@ useEffect(() => {
     clearInterval(connectionCheckInterval);
     
     
-    if (websocketService.isConnected()) {
-      websocketService.disconnect();
-    }
+    websocketService.clearComponentHandlers('CustomerDash');
   };
 }, []);
-
   
   useEffect(() => {
     if (navigator.geolocation) {
@@ -1806,14 +2286,17 @@ useEffect(() => {
     }
   };
 
+
 const fareRates = {
+  
   economy: {
     base: 100,
     per_km: 50,
     name: 'Economy',
     icon: '🚗',
     features: 'Affordable, everyday rides',
-    multiplier: 1
+    multiplier: 1,
+    service_type: 'ride'
   },
   boda: {
     base: 50,
@@ -1821,7 +2304,8 @@ const fareRates = {
     name: 'Boda',
     icon: '🏍️',
     features: 'Fast & affordable motorcycle',
-    multiplier: 0.7
+    multiplier: 0.7,
+    service_type: 'ride'
   },
   premium: {
     base: 150,
@@ -1829,9 +2313,32 @@ const fareRates = {
     name: 'Premium',
     icon: '🚙',
     features: 'Comfort & extra space',
-    multiplier: 1.5
+    multiplier: 1.5,
+    service_type: 'ride'
+  },
+  
+  courier_bike: {
+    base: 60,
+    per_km: 25,
+    name: 'Courier Bike',
+    icon: '🏍️',
+    features: 'Fast package delivery',
+    multiplier: 0.8,
+    max_weight: '5kg',
+    service_type: 'package'
+  },
+  courier_car: {
+    base: 120,
+    per_km: 40,
+    name: 'Courier Car',
+    icon: '🚗',
+    features: 'Large packages & fragile items',
+    multiplier: 1.2,
+    max_weight: '25kg',
+    service_type: 'package'
   }
 };
+
 
   
   const searchAddress = async (query, type) => {
@@ -1932,7 +2439,7 @@ const calculateRoute = async () => {
   setError('');
 
   try {
-    const rideData = {
+    const routeData = {
       pickup_address: pickup,
       dropoff_address: dropoff,
       pickup_lat: pickupCoords[0],
@@ -1943,55 +2450,26 @@ const calculateRoute = async () => {
     };
 
     
-    const result = await RideService.requestRide(rideData);
+    const result = await RideService.calculateRoute(routeData);
     
+ 
     setDistance(result.distance_km);
     setDuration(result.duration_min);
-    setRouteGeometry(result.route_polyline || result.route_geometry);
-    
-   
-    const fares = {};
+    setRouteGeometry(result.route_polyline);
     
     
-    const backendFareRates = {
-      'economy': { base: 100, per_km: 50 },    
-      'premium': { base: 150, per_km: 75 },
-      'boda': { base: 50, per_km: 30 },
-    };
+    setAllVehicleFares(result.all_fares);
+    
+    
+    if (result.all_fares[selectedVehicle]) {
+      setFareEstimate(result.all_fares[selectedVehicle]);
+    }
 
-    for (const vehicleType of Object.keys(fareRates)) {
-      const rates = backendFareRates[vehicleType] || backendFareRates['economy'];
-      
-      
-      const hour = new Date().getHours();
-      const surge_multiplier = (7 <= hour && hour <= 9) || (17 <= hour && hour <= 19) ? 1.2 : 1;
-      
-     
-      const base_fare = rates.base;
-      const distance_charge = result.distance_km * rates.per_km;
-      const subtotal = base_fare + distance_charge;
-      const surge_charge = surge_multiplier > 1 ? subtotal * (surge_multiplier - 1) : 0;
-      const total_fare = Math.round(subtotal * surge_multiplier);
-      
-      fares[vehicleType] = {
-        base: base_fare,
-        distance: Math.round(distance_charge),
-        surge: Math.round(surge_charge),
-        total: total_fare,
-        surge_multiplier: surge_multiplier
-      };
-    }
-    
-    setAllVehicleFares(fares);
-    
-    
-    if (fares[selectedVehicle]) {
-      setFareEstimate(fares[selectedVehicle]);
-    }
+    console.log('✅ Route calculated successfully - no notifications sent to drivers');
 
   } catch (error) {
-    console.error('Route calculation error:', error);
-    setError('Could not calculate route. Please try again.');
+    console.error('❌ Route calculation error:', error);
+    setError(error.message || 'Could not calculate route. Please try again.');
   } finally {
     setLoading(false);
   }
@@ -2059,40 +2537,187 @@ const calculateVehicleFare = (vehicleType, distanceKm, durationMin) => {
   };
 };
 
-  const useCurrentLocation = () => {
-    if (currentLocation) {
-      setPickupCoords(currentLocation);
-      setMapCenter(currentLocation);
-      setPickup('Current Location');
-      setError('');
+const useCurrentLocation = async () => {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Geolocation is not supported by this browser.'));
+      return;
     }
-  };
+
+    setLoading(true);
+    setLocationLoading(true);
+
+    const geolocationOptions = {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 60000
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const pos = [position.coords.latitude, position.coords.longitude];
+          
+          console.log("📍 [Current Location] GPS Coordinates:", {
+            latitude: pos[0],
+            longitude: pos[1],
+            accuracy: `${position.coords.accuracy}m`
+          });
+
+        
+          setCurrentLocation(pos);
+          setPickupCoords(pos);
+          setMapCenter(pos);
+
+          
+          if (mapRef.current) {
+            mapRef.current.setView(pos, 15);
+          }
+
+          
+          try {
+            const addressData = await RideService.reverseGeocode(pos[0], pos[1]);
+            setPickup(addressData.address || addressData.display_name);
+            
+            
+            await RideService.setCurrentLocation({
+              lat: pos[0],
+              lng: pos[1],
+              address: addressData.address
+            });
+          } catch (geocodeError) {
+            console.log("📍 Using coordinates as address");
+            setPickup(`Current Location (${pos[0].toFixed(4)}, ${pos[1].toFixed(4)})`);
+          }
+
+          setError('');
+          resolve(pos);
+          
+        } catch (error) {
+          console.error("❌ Location processing error:", error);
+          setError(error.message);
+          reject(error);
+        } finally {
+          setLoading(false);
+          setLocationLoading(false);
+        }
+      },
+      (error) => {
+        setLoading(false);
+        setLocationLoading(false);
+        
+        let errorMessage = 'Location access denied. ';
+        switch(error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage += 'Please allow location permissions in your browser.';
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage += 'Location information unavailable.';
+            break;
+          case error.TIMEOUT:
+            errorMessage += 'Location request timed out.';
+            break;
+          default:
+            errorMessage += 'Unknown error occurred.';
+            break;
+        }
+        
+        setError(errorMessage);
+        reject(new Error(errorMessage));
+      },
+      geolocationOptions
+    );
+  });
+};
+
+const handleUseCurrentLocation = async () => {
+  try {
+    await useCurrentLocation();
+    addAlert({
+      type: 'success',
+      title: 'Location Updated',
+      message: 'Your current location has been set successfully',
+      autoClose: true
+    });
+  } catch (error) {
+    addAlert({
+      type: 'error',
+      title: 'Location Error',
+      message: error.message,
+      autoClose: true
+    });
+  }
+};
 
 
-   const sendMessage = async () => {
-  if (!newMessage.trim() || !activeRide || !driverInfo) return;
+const reverseGeocode = async (lat, lng) => {
+  try {
+    const response = await fetch(
+      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=YOUR_GOOGLE_API_KEY`
+    );
+    const data = await response.json();
+    
+    if (data.status === 'OK' && data.results[0]) {
+      const address = data.results[0].formatted_address;
+      setPickup(`Current Location: ${address}`);
+      console.log("📍 Reverse geocoded address:", address);
+    } else {
+      setPickup(`Current Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+    }
+  } catch (error) {
+    console.error("Reverse geocode error:", error);
+    setPickup(`Current Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+  }
+};
+
+
+
+const sendMessage = async () => {
+  if (!newMessage.trim() || !activeRide || !driverInfo) {
+    console.log('❌ [Customer Chat] Cannot send - no message, ride, or driver info');
+    console.log('💬 [Customer Chat DEBUG] State:', {
+      hasMessage: !!newMessage.trim(),
+      hasActiveRide: !!activeRide,
+      hasDriverInfo: !!driverInfo,
+      activeRide: activeRide,
+      driverInfo: driverInfo
+    });
+    return;
+  }
 
   try {
-    
+    console.log('💬 [Customer Chat DEBUG] Starting to send message:', {
+      message: newMessage,
+      rideId: activeRide.id,
+      driverId: driverInfo.id,
+      activeRide: activeRide,
+      driverInfo: driverInfo
+    });
+
     await ChatService.sendCustomerMessage(
       activeRide.id, 
       newMessage, 
       driverInfo.id
     );
 
+    console.log('✅ [Customer Chat DEBUG] Message sent successfully');
+
     
-    const newChatMessage = ChatService.formatMessage({
+    const sentMessage = {
+      id: Date.now() + Math.random(),
       message: newMessage,
       sender: 'customer',
       timestamp: new Date().toISOString(),
-      sender_name: 'You'
-    }, 'customer');
+      sender_name: sessionStorage.getItem('user_name') || 'You',
+      isCurrentUser: true,
+      ride_id: activeRide.id
+    };
 
-    setChatMessages(prev => [...prev, newChatMessage]);
+    setChatMessages(prev => [...prev, sentMessage]);
     setNewMessage('');
 
   } catch (error) {
-    console.error('❌ [Chat] Error sending message:', error);
+    console.error('❌ [Customer Chat] Error sending message:', error);
     addAlert({
       type: 'error',
       title: 'Message Failed',
@@ -2103,7 +2728,7 @@ const calculateVehicleFare = (vehicleType, distanceKm, durationMin) => {
 };
 
  
-  const requestRide = async () => {
+const requestRide = async () => {
   if (isRequestingRide || activeRide) {
     console.log('🟡 [Customer] Ride request already in progress or active ride exists');
     return;
@@ -2127,21 +2752,19 @@ const calculateVehicleFare = (vehicleType, distanceKm, durationMin) => {
       dropoff_lat: dropoffCoords[0],
       dropoff_lng: dropoffCoords[1],
       vehicle_type: selectedVehicle,
-      estimated_fare: fareEstimate.total
+      estimated_fare: fareEstimate.total,
+      service_type: 'ride', 
+      request_type: 'ride'
     };
 
     console.log('🟡 [Customer] Requesting ride with data:', rideData);
+    
+    
     const result = await RideService.requestRide(rideData);
     
     setActiveRide(result);
     setRideStatus('requested');
     
-  
-    if (result.fare_breakdown) {
-      setFareEstimate(result.fare_breakdown);
-    }
-    
-   
     addNotification({
       type: 'ride_requested',
       title: 'Ride Requested',
@@ -2151,36 +2774,47 @@ const calculateVehicleFare = (vehicleType, distanceKm, durationMin) => {
 
     saveToRideHistory(result);
     
-    console.log('✅ [Customer] Ride requested successfully:', result);
+    console.log('✅ [Customer] Ride requested successfully - notifications sent to drivers');
     
   } catch (error) {
     console.error('❌ [Customer] Ride request error:', error);
-    setError('Failed to request ride. Please try again.');
+    setError(error.message || 'Failed to request ride. Please try again.');
   } finally {
     setLoading(false);
     setIsRequestingRide(false);
   }
 };
 
-  // Map controller component
+ 
   const MapController = () => {
-    const map = useMap();
+  const map = useMap();
+  
+  useEffect(() => {
+    console.log("🗺️ [MapController] Updating map view...");
     
-    useEffect(() => {
-      if (pickupCoords && dropoffCoords) {
-        const bounds = L.latLngBounds([pickupCoords, dropoffCoords]);
-        map.fitBounds(bounds, { padding: [20, 20] });
-      } else if (pickupCoords) {
-        map.setView(pickupCoords, 15);
-      } else if (currentLocation) {
-        map.setView(currentLocation, 15);
-      }
-    }, [map, pickupCoords, dropoffCoords, currentLocation]);
+    
+    if (pickupCoords) {
+      console.log("📍 [MapController] Centering to pickup:", pickupCoords);
+      map.setView(pickupCoords, 15);
+    } 
+   
+    else if (currentLocation) {
+      console.log("📍 [MapController] Centering to current location:", currentLocation);
+      map.setView(currentLocation, 15);
+    }
+   
+    else if (pickupCoords && dropoffCoords) {
+      const bounds = L.latLngBounds([pickupCoords, dropoffCoords]);
+      map.fitBounds(bounds, { padding: [20, 20] });
+      console.log("📍 [MapController] Fitting bounds");
+    }
+    
+  }, [map, pickupCoords, dropoffCoords, currentLocation]);
 
-    return null;
-  };
+  return null;
+};
 
-  // Polyline decoder
+  
   const decodePolyline = (polyline) => {
     if (!polyline) return [];
     
@@ -2222,6 +2856,68 @@ const calculateVehicleFare = (vehicleType, distanceKm, durationMin) => {
     return coordinates;
   }; 
 
+  
+
+
+const handleAutoCalculate = useCallback(async (voiceCommand) => {
+  try {
+    console.log('🔄 [Auto] Starting automated route calculation...');
+    
+   
+    setPickup(voiceCommand.pickup_address);
+    setDropoff(voiceCommand.dropoff_address);
+    setSelectedVehicle(voiceCommand.vehicle_type);
+    
+    if (voiceCommand.service_type === 'courier') {
+      setActiveTab('courier');
+      if (voiceCommand.package_description) {
+        setPackageDescription(voiceCommand.package_description);
+      }
+    } else {
+      setActiveTab('ride');
+    }
+
+    
+    setTimeout(async () => {
+      try {
+        
+        await calculateRoute();
+        
+        
+        speak(`Route calculated! Your ${fareRates[voiceCommand.vehicle_type]?.name} will cost approximately KSH ${fareEstimate?.total?.toLocaleString()}. Ready to book when you are.`);
+        
+       
+        addNotification({
+          type: 'voice_auto_calculated',
+          title: 'Route Calculated Automatically',
+          message: `Your ${fareRates[voiceCommand.vehicle_type]?.name} is ready to book for KSH ${fareEstimate?.total?.toLocaleString()}`,
+          data: { fare: fareEstimate, command: voiceCommand }
+        });
+        
+      } catch (calcError) {
+        console.error('Auto-calculation failed:', calcError);
+        speak("I had trouble calculating the route. Please check the locations and try again.");
+      }
+    }, 1000);
+    
+  } catch (error) {
+    console.error('Auto-process failed:', error);
+    speak("Sorry, I encountered an error while processing your request.");
+  }
+}, []); 
+
+
+const {
+  isListening,
+  transcript,
+  isProcessing,
+  error: voiceError,
+  startListening,
+  stopListening,
+  processVoiceCommand,
+  speak
+} = VoiceAssistant(handleAutoCalculate);
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-emerald-900 to-gray-900">
@@ -2257,6 +2953,17 @@ const calculateVehicleFare = (vehicleType, distanceKm, durationMin) => {
             </div>
 
             <div className="flex items-center gap-4">
+
+              <button
+    onClick={() => setShowVoiceAssistant(true)}
+    className="relative p-2 text-white/80 hover:text-white transition-colors bg-emerald-500/20 hover:bg-emerald-500/30 rounded-lg border border-emerald-500/30"
+    title="Voice Assistant"
+  >
+    <Mic className="w-6 h-6" />
+    {isListening && (
+      <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
+    )}
+  </button>
               
               <NotificationBell
                 notifications={notifications}
@@ -2398,18 +3105,21 @@ const calculateVehicleFare = (vehicleType, distanceKm, durationMin) => {
                       disabled={activeRide}
                     />
                     <div className="absolute right-2 top-2 flex gap-1">
-                      <button
-                        onClick={useCurrentLocation}
-                        className="bg-emerald-500/20 text-emerald-300 p-2 rounded-lg hover:bg-emerald-500/30 transition border border-emerald-500/30"
-                        title="Use current location"
-                        disabled={activeRide}
-                      >
-                        <Navigation size={16} />
-                      </button>
-                      <div className="bg-white/10 p-2 rounded-lg border border-white/20">
-                        <Search className="text-white/60" size={16} />
-                      </div>
-                    </div>
+  <button
+    onClick={useCurrentLocation}
+    className="bg-emerald-500 text-white p-2 rounded-lg hover:bg-emerald-600 transition border border-emerald-600 flex items-center gap-1"
+    title="Use my current location"
+    disabled={activeRide}
+  >
+    <Navigation size={14} />
+    <span className="text-xs">Current</span>
+  </button>
+  <div className="bg-white/10 p-2 rounded-lg border border-white/20">
+    <Search className="text-white/60" size={16} />
+  </div>
+</div>
+
+
                     
                     
                     {showPickupSuggestions && (
@@ -2508,63 +3218,66 @@ const calculateVehicleFare = (vehicleType, distanceKm, durationMin) => {
       Choose a ride
     </label>
     <div className="space-y-2">
-      {Object.entries(fareRates).map(([key, rate]) => {
-        const vehicleFare = allVehicleFares[key];
-        
-        return (
-          <button
-            key={key}
-            onClick={() => handleVehicleSelect(key)}
-            className={`w-full p-4 rounded-xl border-2 transition-all ${
-              selectedVehicle === key
-                ? 'border-emerald-400 bg-emerald-500/20'
-                : 'border-white/20 bg-white/5 hover:border-white/30'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{rate.icon}</span>
-                <div className="text-left">
-                  <p className="font-semibold text-white">{rate.name}</p>
-                  {distance && duration ? (
-                    <p className="text-xs text-white/60">
-                      {Math.round(duration)} min • {distance.toFixed(1)} km
-                    </p>
+      {Object.entries(fareRates)
+        .filter(([key, rate]) => rate.service_type === 'ride') 
+        .map(([key, rate]) => {
+          
+          const vehicleFare = allVehicleFares[key]; 
+          
+          return (
+            <button
+              key={key}
+              onClick={() => handleVehicleSelect(key)}
+              className={`w-full p-4 rounded-xl border-2 transition-all ${
+                selectedVehicle === key
+                  ? 'border-emerald-400 bg-emerald-500/20'
+                  : 'border-white/20 bg-white/5 hover:border-white/30'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">{rate.icon}</span>
+                  <div className="text-left">
+                    <p className="font-semibold text-white">{rate.name}</p>
+                    {distance && duration ? (
+                      <p className="text-xs text-white/60">
+                        {Math.round(duration)} min • {distance.toFixed(1)} km
+                      </p>
+                    ) : (
+                      <p className="text-xs text-white/60">
+                        Select locations first
+                      </p>
+                    )}
+                    {rate.features && (
+                      <p className="text-xs text-emerald-300 mt-1">
+                        {rate.features}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right">
+                  {vehicleFare ? ( 
+                    <>
+                      <p className="font-bold text-white text-lg">
+                        KSH {vehicleFare.total?.toLocaleString() || '---'}
+                      </p>
+                      <p className="text-xs text-white/60">
+                        {vehicleFare.surge_multiplier > 1 ? 'Surge pricing' : 'Standard fare'}
+                      </p>
+                    </>
                   ) : (
-                    <p className="text-xs text-white/60">
-                      Select locations first
-                    </p>
-                  )}
-                  {rate.features && (
-                    <p className="text-xs text-emerald-300 mt-1">
-                      {rate.features}
-                    </p>
+                    <p className="text-xs text-white/60">--</p>
                   )}
                 </div>
-              </div>
-              <div className="text-right">
-                {vehicleFare ? (
-                  <>
-                    <p className="font-bold text-white text-lg">
-                      KSH {vehicleFare.total?.toLocaleString() || '---'}
-                    </p>
-                    <p className="text-xs text-white/60">
-                      {vehicleFare.surge_multiplier > 1 ? 'Surge pricing' : 'Standard fare'}
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-xs text-white/60">--</p>
+                {selectedVehicle === key && (
+                  <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center border border-white/30 ml-3">
+                    <span className="text-white text-xs">✓</span>
+                  </div>
                 )}
               </div>
-              {selectedVehicle === key && (
-                <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center border border-white/30 ml-3">
-                  <span className="text-white text-xs">✓</span>
-                </div>
-              )}
-            </div>
-          </button>
-        );
-      })}
+            </button>
+          );
+        })}
     </div>
   </div>
 )}
@@ -2876,9 +3589,579 @@ const calculateVehicleFare = (vehicleType, distanceKm, durationMin) => {
   </div>
 )}
 
+
 {activeTab === 'courier' && (
-  <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-8 border border-white/20 text-center">
-    <p className="text-white/60">Package delivery features coming soon</p>
+  <div className="bg-white/10 backdrop-blur-xl rounded-2xl border border-white/20 overflow-hidden">
+    
+    
+    {activeRide && activeRide.service_type === 'package' && (
+      <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-4 text-white border-b border-blue-400/30">
+        <div className="flex justify-between items-center">
+          <div>
+            <h3 className="font-bold text-lg">Package Delivery in Progress</h3>
+            <p className="text-blue-100 capitalize">
+              Status: {rideStatus ? rideStatus.replace('_', ' ') : 'Waiting for courier'}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setShowChat(!showChat)}
+              className="bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition flex items-center gap-2 border border-white/30"
+            >
+              <MessageCircle size={16} />
+              Chat
+            </button>
+          </div>
+        </div>
+
+        {driverInfo && rideStatus === 'accepted' && (
+          <div className="mt-3 p-3 bg-white/10 rounded-lg border border-white/20">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center border border-white/30">
+                <User className="text-white" size={20} />
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold">
+                  {driverInfo.first_name} {driverInfo.last_name}
+                </p>
+                <div className="flex items-center gap-4 text-sm text-blue-100">
+                  <div className="flex items-center gap-1">
+                    <Car size={14} />
+                    {fareRates[activeRide.vehicle_type]?.name || 'Courier'}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Phone size={14} />
+                    {driverInfo.phone_number}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+ {!activeRide && distance && (
+  <div>
+    <label className="block text-sm font-semibold text-white mb-3">
+      Choose Courier Type
+    </label>
+    <div className="space-y-2">
+      {Object.entries(fareRates)
+        .filter(([key, rate]) => rate.service_type === 'package')
+        .map(([key, rate]) => {
+          
+          const vehicleFare = allVehicleFares[key]; 
+          
+          return (
+            <button
+              key={key}
+              onClick={() => handleVehicleSelect(key)}
+              className={`w-full p-4 rounded-xl border-2 transition-all ${
+                selectedVehicle === key
+                  ? 'border-blue-400 bg-blue-500/20'
+                  : 'border-white/20 bg-white/5 hover:border-white/30'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">{rate.icon}</span>
+                  <div className="text-left">
+                    <p className="font-semibold text-white">{rate.name}</p>
+                    {distance && duration ? (
+                      <p className="text-xs text-white/60">
+                        {Math.round(duration)} min • {distance.toFixed(1)} km
+                      </p>
+                    ) : (
+                      <p className="text-xs text-white/60">
+                        Select locations first
+                      </p>
+                    )}
+                    {rate.features && (
+                      <p className="text-xs text-blue-300 mt-1">
+                        {rate.features}
+                      </p>
+                    )}
+                    {rate.max_weight && (
+                      <p className="text-xs text-white/60 mt-1">
+                        Max: {rate.max_weight}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right">
+                  {vehicleFare ? (
+                    <>
+                      <p className="font-bold text-white text-lg">
+                        KSH {vehicleFare.total?.toLocaleString() || '---'}
+                      </p>
+                      <p className="text-xs text-white/60">
+                        {vehicleFare.surge_multiplier > 1 ? 'Surge pricing' : 'Standard fare'}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-white/60">--</p>
+                  )}
+                </div>
+                {selectedVehicle === key && (
+                  <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center border border-white/30 ml-3">
+                    <span className="text-white text-xs">✓</span>
+                  </div>
+                )}
+              </div>
+            </button>
+          );
+        })}
+    </div>
+  </div>
+)}
+      </div>
+    )}
+
+    
+    {error && (
+      <div className="bg-red-500/20 border-l-4 border-red-400 p-4 mx-6 mt-4 text-white">
+        <div className="flex items-center">
+          <AlertCircle className="text-red-300 mr-2" size={20} />
+          <p>{error}</p>
+        </div>
+      </div>
+    )}
+
+   
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-0">
+      
+     
+      <div className="lg:col-span-1 p-6 space-y-6 border-r border-white/20">
+        
+       
+        <div>
+          <label className="block text-sm font-semibold text-white mb-3 flex items-center gap-2">
+            <Package className="w-4 h-4 text-blue-300" />
+            I want to...
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => setPackageType('send')}
+              className={`p-4 rounded-xl border-2 transition-all ${
+                packageType === 'send'
+                  ? 'border-blue-400 bg-blue-500/20'
+                  : 'border-white/20 bg-white/5 hover:border-white/30'
+              }`}
+            >
+              <div className="flex flex-col items-center gap-2">
+                <Upload className="w-6 h-6 text-blue-300" />
+                <span className="text-white font-medium text-sm">Send Package</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setPackageType('receive')}
+              className={`p-4 rounded-xl border-2 transition-all ${
+                packageType === 'receive'
+                  ? 'border-green-400 bg-green-500/20'
+                  : 'border-white/20 bg-white/5 hover:border-white/30'
+              }`}
+            >
+              <div className="flex flex-col items-center gap-2">
+                <Download className="w-6 h-6 text-green-300" />
+                <span className="text-white font-medium text-sm">Receive Package</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        
+
+       
+        <div ref={pickupRef} className="relative">
+          <label className="block text-sm font-semibold text-white mb-2">
+            <MapPin className="inline w-4 h-4 mr-1 text-blue-300" />
+            {packageType === 'send' ? 'Pickup Location' : 'Your Location'}
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              value={pickup}
+              onChange={(e) => handleAddressInput(e.target.value, 'pickup')}
+              onFocus={() => pickup.length >= 3 && setShowPickupSuggestions(true)}
+              placeholder={packageType === 'send' ? "Where to pick up package?" : "Your current location"}
+              className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl focus:border-blue-400 focus:outline-none text-white placeholder-white/60 pr-20"
+              disabled={activeRide}
+            />
+            <div className="absolute right-2 top-2 flex gap-1">
+              <button
+                onClick={useCurrentLocation}
+                className="bg-blue-500/20 text-blue-300 p-2 rounded-lg hover:bg-blue-500/30 transition border border-blue-500/30"
+                title="Use current location"
+                disabled={activeRide}
+              >
+                <Navigation size={16} />
+              </button>
+              <div className="bg-white/10 p-2 rounded-lg border border-white/20">
+                <Search className="text-white/60" size={16} />
+              </div>
+            </div>
+            
+            
+            {showPickupSuggestions && (
+              <div className="absolute z-50 w-full mt-1 bg-gray-800 border border-white/20 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                {isLoadingSuggestions ? (
+                  <div className="p-3 text-white/60 text-center">Loading suggestions...</div>
+                ) : pickupSuggestions.length > 0 ? (
+                  pickupSuggestions.map((suggestion) => (
+                    <div
+                      key={suggestion.place_id}
+                      className="p-3 hover:bg-blue-500/20 cursor-pointer border-b border-white/10 last:border-b-0"
+                      onClick={() => handleAddressSelect(suggestion, 'pickup')}
+                    >
+                      <div className="flex items-start">
+                        <MapPin className="text-blue-300 mt-0.5 mr-2 flex-shrink-0" size={16} />
+                        <span className="text-sm text-white">{suggestion.description}</span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-3 text-white/60 text-center">No suggestions found</div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div ref={dropoffRef} className="relative">
+          <label className="block text-sm font-semibold text-white mb-2">
+            <MapPin className="inline w-4 h-4 mr-1 text-blue-300" />
+            {packageType === 'send' ? 'Delivery Location' : "Sender's Location"}
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              value={dropoff}
+              onChange={(e) => handleAddressInput(e.target.value, 'dropoff')}
+              onFocus={() => dropoff.length >= 3 && setShowDropoffSuggestions(true)}
+              placeholder={packageType === 'send' ? "Where to deliver package?" : "Where is package coming from?"}
+              className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl focus:border-blue-400 focus:outline-none text-white placeholder-white/60 pr-12"
+              disabled={activeRide}
+            />
+            <div className="absolute right-2 top-2">
+              <div className="bg-white/10 p-2 rounded-lg border border-white/20">
+                <Search className="text-white/60" size={16} />
+              </div>
+            </div>
+            
+            
+            {showDropoffSuggestions && (
+              <div className="absolute z-50 w-full mt-1 bg-gray-800 border border-white/20 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                {isLoadingSuggestions ? (
+                  <div className="p-3 text-white/60 text-center">Loading suggestions...</div>
+                ) : dropoffSuggestions.length > 0 ? (
+                  dropoffSuggestions.map((suggestion) => (
+                    <div
+                      key={suggestion.place_id}
+                      className="p-3 hover:bg-blue-500/20 cursor-pointer border-b border-white/10 last:border-b-0"
+                      onClick={() => handleAddressSelect(suggestion, 'dropoff')}
+                    >
+                      <div className="flex items-start">
+                        <MapPin className="text-blue-300 mt-0.5 mr-2 flex-shrink-0" size={16} />
+                        <span className="text-sm text-white">{suggestion.description}</span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-3 text-white/60 text-center">No suggestions found</div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        
+        <div>
+          <label className="block text-sm font-semibold text-white mb-2">
+            <Package className="inline w-4 h-4 mr-1 text-blue-300" />
+            Package Details
+          </label>
+          <textarea
+            value={packageDescription}
+            onChange={(e) => setPackageDescription(e.target.value)}
+            placeholder="What are you sending/receiving? (e.g., Documents, Electronics, Food, etc.)"
+            rows={3}
+            className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl focus:border-blue-400 focus:outline-none text-white placeholder-white/60"
+            disabled={activeRide}
+          />
+        </div>
+
+       
+        <div>
+          <label className="block text-sm font-semibold text-white mb-2">
+            <User className="inline w-4 h-4 mr-1 text-blue-300" />
+            {packageType === 'send' ? "Recipient's Information" : "Your Information"}
+          </label>
+          <div className="space-y-3">
+            <input
+              type="text"
+              value={recipientName}
+              onChange={(e) => setRecipientName(e.target.value)}
+              placeholder={packageType === 'send' ? "Recipient full name" : "Your full name"}
+              className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl focus:border-blue-400 focus:outline-none text-white placeholder-white/60"
+              disabled={activeRide}
+            />
+            <input
+              type="tel"
+              value={recipientPhone}
+              onChange={(e) => setRecipientPhone(e.target.value)}
+              placeholder={packageType === 'send' ? "Recipient phone (07XX XXX XXX)" : "Your phone (07XX XXX XXX)"}
+              className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl focus:border-blue-400 focus:outline-none text-white placeholder-white/60"
+              disabled={activeRide}
+            />
+          </div>
+        </div>
+
+        
+        <div>
+          <label className="block text-sm font-semibold text-white mb-2">
+            <MessageCircle className="inline w-4 h-4 mr-1 text-blue-300" />
+            Delivery Instructions
+          </label>
+          <textarea
+            value={deliveryInstructions}
+            onChange={(e) => setDeliveryInstructions(e.target.value)}
+            placeholder="Special instructions for the courier (optional)"
+            rows={2}
+            className="w-full px-4 py-3 bg-white/10 border-2 border-white/20 rounded-xl focus:border-blue-400 focus:outline-none text-white placeholder-white/60"
+            disabled={activeRide}
+          />
+        </div>
+
+        
+        {!activeRide && (
+          <button
+            onClick={calculateRoute}
+            disabled={!pickupCoords || !dropoffCoords || loading}
+            className={`w-full py-3 rounded-xl font-bold text-white transition-all ${
+              pickupCoords && dropoffCoords && !loading
+                ? 'bg-gradient-to-r from-blue-500 to-blue-600 hover:shadow-lg border border-blue-400/30'
+                : 'bg-gray-600 cursor-not-allowed border border-white/20'
+            }`}
+          >
+            {loading ? 'Calculating...' : 
+             pickupCoords && dropoffCoords ? 'Calculate Route & Fares' : 'Select Locations'}
+          </button>
+        )}
+
+        
+        {!activeRide && distance && (
+          <div>
+            <label className="block text-sm font-semibold text-white mb-3">
+              Choose Courier Type
+            </label>
+            <div className="space-y-2">
+              {Object.entries(fareRates)
+                .filter(([key, rate]) => rate.service_type === 'package')
+                .map(([key, rate]) => {
+                  const vehicleFare = allVehicleFares[key];
+                  
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => handleVehicleSelect(key)}
+                      className={`w-full p-4 rounded-xl border-2 transition-all ${
+                        selectedVehicle === key
+                          ? 'border-blue-400 bg-blue-500/20'
+                          : 'border-white/20 bg-white/5 hover:border-white/30'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl">{rate.icon}</span>
+                          <div className="text-left">
+                            <p className="font-semibold text-white">{rate.name}</p>
+                            {distance && duration ? (
+                              <p className="text-xs text-white/60">
+                                {Math.round(duration)} min • {distance.toFixed(1)} km
+                              </p>
+                            ) : (
+                              <p className="text-xs text-white/60">
+                                Select locations first
+                              </p>
+                            )}
+                            {rate.features && (
+                              <p className="text-xs text-blue-300 mt-1">
+                                {rate.features}
+                              </p>
+                            )}
+                            {rate.max_weight && (
+                              <p className="text-xs text-white/60 mt-1">
+                                Max: {rate.max_weight}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          {vehicleFare ? (
+                            <>
+                              <p className="font-bold text-white text-lg">
+                                KSH {vehicleFare.total?.toLocaleString() || '---'}
+                              </p>
+                              <p className="text-xs text-white/60">
+                                {vehicleFare.surge_multiplier > 1 ? 'Surge pricing' : 'Standard fare'}
+                              </p>
+                            </>
+                          ) : (
+                            <p className="text-xs text-white/60">--</p>
+                          )}
+                        </div>
+                        {selectedVehicle === key && (
+                          <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center border border-white/30 ml-3">
+                            <span className="text-white text-xs">✓</span>
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+
+       
+        {distance && duration && !activeRide && (
+          <div className="bg-blue-500/10 rounded-xl p-4 border border-blue-400/30">
+            <h3 className="font-semibold text-white mb-3">Delivery Details</h3>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-white/60 text-sm">Distance</span>
+                <span className="font-bold text-white">
+                  {distance.toFixed(2)} km
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-white/60 text-sm">Estimated Time</span>
+                <span className="font-bold text-white">
+                  {Math.round(duration)} mins
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+ 
+{!activeRide && (
+  <button
+    onClick={() => {
+     
+      if (!packageDescription || !recipientName || !recipientPhone) {
+        setError('Please fill in package description, recipient name and phone');
+        return;
+      }
+      
+     
+      const packageData = {
+        package_description: packageDescription,
+        package_size: 'medium', 
+        recipient_name: recipientName,
+        recipient_phone: recipientPhone,
+        delivery_instructions: deliveryInstructions,
+        selected_vehicle: selectedVehicle
+      };
+      
+      handleCourierRequest(packageData);
+    }}
+    disabled={!fareEstimate || loading || isRequestingRide}
+    className={`w-full py-4 rounded-xl font-bold text-white transition-all ${
+      fareEstimate && !loading && !isRequestingRide
+        ? 'bg-gradient-to-r from-blue-500 to-blue-600 hover:shadow-lg hover:scale-105 border border-blue-400/30'
+        : 'bg-gray-600 cursor-not-allowed border border-white/20'
+    }`}
+  >
+    {isRequestingRide ? 'Requesting...' : 
+     loading ? 'Calculating...' : 
+     fareEstimate ? `Request ${fareRates[selectedVehicle]?.name} - KSH ${fareEstimate.total?.toLocaleString() || '---'}` : 'Enter Locations'}
+  </button>
+)}
+      </div>
+
+     
+      <div className="lg:col-span-2 relative" style={{ minHeight: '600px' }}>
+        <MapContainer
+          center={mapCenter}
+          zoom={13}
+          style={{ height: '100%', width: '100%', minHeight: '600px' }}
+          ref={mapRef}
+        >
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          />
+          
+          <MapController />
+          
+         
+          {currentLocation && (
+            <Marker 
+              position={currentLocation}
+              icon={createCustomIcon('#10B981', 'Y')}
+            >
+              <Popup>Your Current Location</Popup>
+            </Marker>
+          )}
+          
+        
+          {pickupCoords && (
+            <Marker 
+              position={pickupCoords}
+              icon={createCustomIcon('#3B82F6', 'P')}
+            >
+              <Popup>Pickup Location</Popup>
+            </Marker>
+          )}
+          
+          
+          {dropoffCoords && (
+            <Marker 
+              position={dropoffCoords}
+              icon={createCustomIcon('#EF4444', 'D')}
+            >
+              <Popup>Delivery Location</Popup>
+            </Marker>
+          )}
+          
+          
+          {driverLocation && (
+            <Marker 
+              position={[driverLocation.lat, driverLocation.lng]}
+              icon={createCustomIcon('#F59E0B', 'C')}
+            >
+              <Popup>
+                <div className="text-center">
+                  <p className="font-semibold">Your Courier</p>
+                  {driverInfo && (
+                    <p>{driverInfo.first_name} {driverInfo.last_name}</p>
+                  )}
+                </div>
+              </Popup>
+            </Marker>
+          )}
+          
+          
+          {routeGeometry && (
+            <Polyline
+              positions={decodePolyline(routeGeometry)}
+              color="#3B82F6"
+              weight={5}
+              opacity={0.8}
+            />
+          )}
+        </MapContainer>
+        
+        {loading && (
+          <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-2xl">
+            <div className="bg-white rounded-lg p-6 text-center">
+              <div className="w-8 h-8 border-4 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+              <p className="text-gray-700 font-medium">Calculating route...</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   </div>
 )}
 
@@ -2903,7 +4186,7 @@ const calculateVehicleFare = (vehicleType, distanceKm, durationMin) => {
         onClick={handleEditPersonalInfo}
         className="bg-emerald-500/20 text-emerald-300 px-3 py-2 rounded-lg border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors flex items-center gap-2"
       >
-        <Edit3 className="w-4 h-4" />
+        
         Edit
       </button>
     ) : (
@@ -3147,6 +4430,7 @@ const calculateVehicleFare = (vehicleType, distanceKm, durationMin) => {
         onMessageChange={(e) => setNewMessage(e.target.value)}
         onSendMessage={sendMessage}
         driverInfo={driverInfo}
+        currentUserType="customer"
       />
 
      
@@ -3183,6 +4467,138 @@ const calculateVehicleFare = (vehicleType, distanceKm, durationMin) => {
   show={showChatHistory}
   onClose={() => setShowChatHistory(false)}
   chatHistory={allChatHistory}
+/>
+
+
+{showVoiceAssistant && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+    <div className="bg-gray-900 rounded-2xl border border-white/20 w-full max-w-md">
+     
+      <div className="flex justify-between items-center p-6 border-b border-white/20">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
+            <Bot className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-white font-bold">Auto Voice Assistant</h3>
+            <p className="text-white/60 text-sm">
+              {isListening ? 'Listening...' : 
+               isProcessing ? 'Processing...' : 
+               'I\'ll handle everything automatically'}
+            </p>
+          </div>
+        </div>
+      </div>
+
+    
+      <div className="p-4 border-b border-white/20">
+        <div className="flex items-center justify-between text-xs text-white/60">
+          <div className={`flex items-center gap-2 ${transcript ? 'text-emerald-400' : ''}`}>
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+              transcript ? 'bg-emerald-500' : 'bg-gray-600'
+            }`}>
+              {transcript ? '✓' : '1'}
+            </div>
+            <span>Voice Command</span>
+          </div>
+          <div className={`flex items-center gap-2 ${isProcessing ? 'text-blue-400' : ''}`}>
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+              isProcessing ? 'bg-blue-500' : 'bg-gray-600'
+            }`}>
+              {isProcessing ? '⟳' : '2'}
+            </div>
+            <span>Processing</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-full flex items-center justify-center bg-gray-600">
+              3
+            </div>
+            <span>Ready to Book</span>
+          </div>
+        </div>
+      </div>
+
+     
+      <div className="p-6">
+       
+        <div className="space-y-4">
+          
+          {transcript && (
+            <div className="bg-blue-500/10 rounded-xl p-4 border border-blue-500/20">
+              <p className="text-blue-300 text-sm mb-1 font-medium">You said:</p>
+              <p className="text-white">"{transcript}"</p>
+            </div>
+          )}
+
+          
+          {isProcessing && (
+            <div className="bg-purple-500/10 rounded-xl p-4 border border-purple-500/20">
+              <div className="flex items-center gap-3">
+                <div className="flex gap-1">
+                  <div className="w-1 h-4 bg-purple-400 rounded-full animate-bounce"></div>
+                  <div className="w-1 h-4 bg-purple-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                  <div className="w-1 h-4 bg-purple-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                </div>
+                <div className="flex-1">
+                  <p className="text-purple-300 text-sm font-medium">Automating your request...</p>
+                  <p className="text-purple-200 text-xs">Setting locations • Calculating route • Getting fares</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          
+          {!isListening && !isProcessing && transcript && !voiceError && fareEstimate && (
+            <div className="bg-emerald-500/10 rounded-xl p-4 border border-emerald-500/20">
+              <div className="flex items-center gap-2 mb-2">
+                <CheckCircle className="w-5 h-5 text-emerald-400" />
+                <p className="text-emerald-300 font-medium">Ready to Book!</p>
+              </div>
+              <p className="text-emerald-200 text-sm">
+                Your {fareRates[selectedVehicle]?.name} to {dropoff} is ready.
+                <br />
+                <span className="font-bold">Total: KSH {fareEstimate.total?.toLocaleString()}</span>
+              </p>
+              <button
+                onClick={() => {
+                  setShowVoiceAssistant(false);
+                  
+                }}
+                className="w-full mt-3 bg-emerald-500 text-white py-2 rounded-lg hover:bg-emerald-600 transition-colors font-medium"
+              >
+                Close & Review Booking
+              </button>
+            </div>
+          )}
+        </div>
+
+        
+        <div className="flex justify-center mt-6">
+          <button
+            onClick={isListening ? stopListening : startListening}
+            disabled={isProcessing}
+            className={`w-16 h-16 rounded-full flex items-center justify-center transition-all ${
+              isListening 
+                ? 'bg-red-500 hover:bg-red-600 animate-pulse' 
+                : 'bg-emerald-500 hover:bg-emerald-600'
+            } ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            {isListening ? (
+              <Square className="w-6 h-6 text-white" />
+            ) : (
+              <Mic className="w-6 h-6 text-white" />
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
+<CourierModal
+  show={showCourierModal}
+  onClose={() => setShowCourierModal(false)}
+  onRequestCourier={handleCourierRequest}
 />
     </div>
   );

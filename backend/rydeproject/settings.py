@@ -42,7 +42,9 @@ INSTALLED_APPS = [
     'rest_framework', 
     'rest_framework_simplejwt',
     'corsheaders',
-    'channels'
+    'channels',
+    'cloudinary',
+    'cloudinary_storage'
 ]
 
 REST_FRAMEWORK = { 
@@ -119,6 +121,14 @@ TEMPLATES = [
     },
 ]
 
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': 'dh3nh9mck',
+    'API_KEY': '624374768459569', 
+    'API_SECRET': 'Kmxk4y-Qsru8x7LiMzXdSN-HPT0',
+}
+
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+
 # ASGI Configuration
 ASGI_APPLICATION = 'rydeproject.asgi.application'
 
@@ -132,6 +142,9 @@ CHANNEL_LAYERS = {
     },
 }
 
+# CHANNELS_WS_PROTOCOLS = ["websocket"]
+# CHANNELS_WS_MAX_MESSAGE_SIZE = 1024 * 1024  # 1MB
+# CHANNELS_WS_HEARTBEAT = 30  # seconds
 
 
 WSGI_APPLICATION = 'rydeproject.wsgi.application'

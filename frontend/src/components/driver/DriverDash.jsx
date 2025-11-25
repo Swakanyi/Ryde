@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Car, MapPin, DollarSign, Clock, MessageCircle, Send,
+  Car, MapPin, DollarSign, Clock, MessageCircle, Send, Package,
   Navigation, User, Shield, Star, AlertCircle, Bell, X, RefreshCw
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
@@ -41,7 +41,6 @@ const NotificationBell = ({ notifications, unreadCount, onMarkAsRead, onClearNot
 
   return (
     <div className="relative">
-      
       <button
         onClick={() => setShowNotifications(!showNotifications)}
         className="relative p-2 text-white/80 hover:text-white transition-colors"
@@ -54,7 +53,6 @@ const NotificationBell = ({ notifications, unreadCount, onMarkAsRead, onClearNot
         )}
       </button>
 
-     
       {showNotifications && (
         <div className="absolute right-0 top-12 w-96 bg-white rounded-2xl shadow-2xl border border-gray-200 z-50 max-h-96 overflow-hidden">
           <div className="p-4 border-b border-gray-100">
@@ -86,75 +84,99 @@ const NotificationBell = ({ notifications, unreadCount, onMarkAsRead, onClearNot
                 <p>No notifications yet</p>
               </div>
             ) : (
-              notifications.map((notification) => (
-                <div
-                  key={notification.id}
-                  onClick={() => onMarkAsRead(notification.id)}
-                  className={`p-4 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors ${
-                    !notification.read ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
-                  }`}
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex items-center gap-2">
-                      {notification.type === 'ride_request' && (
-                        <Car className="w-4 h-4 text-green-500" />
-                      )}
-                      {notification.type === 'ride_accepted' && (
-                        <MessageCircle className="w-4 h-4 text-blue-500" />
-                      )}
-                      <span className="font-semibold text-gray-800 text-sm">
-                        {notification.title}
-                      </span>
+              notifications.map((notification) => {
+                const isCourier = notification.type === 'courier_request';
+                const isRide = notification.type === 'ride_request';
+                
+                return (
+                  <div
+                    key={notification.id}
+                    onClick={() => onMarkAsRead(notification.id)}
+                    className={`p-4 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors ${
+                      !notification.read ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
+                    }`}
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex items-center gap-2">
+                        {isRide && <Car className="w-4 h-4 text-green-500" />}
+                        {isCourier && <Package className="w-4 h-4 text-blue-500" />}
+                        {notification.type === 'ride_accepted' && <MessageCircle className="w-4 h-4 text-blue-500" />}
+                        
+                        <span className="font-semibold text-gray-800 text-sm">
+                          {isCourier ? '📦 Package Delivery' : notification.title}
+                        </span>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onClearNotification(notification.id);
+                        }}
+                        className="text-gray-400 hover:text-gray-600 ml-2"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onClearNotification(notification.id);
-                      }}
-                      className="text-gray-400 hover:text-gray-600 ml-2"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                  
-                  <p className="text-gray-600 text-sm mb-2">{notification.message}</p>
-                  
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-gray-400">
-                      {new Date(notification.timestamp).toLocaleTimeString()}
-                    </span>
-                    {!notification.read && (
-                      <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                    
+                    <p className="text-gray-600 text-sm mb-2">
+                      {isCourier 
+                        ? `You have a courier request - ${notification.data.package_description || 'Package delivery'}`
+                        : notification.message
+                      }
+                    </p>
+                    
+                    
+                    {isCourier && notification.data.package_size && (
+                      <div className="bg-blue-50 rounded p-2 mb-2">
+                        <p className="text-blue-800 text-xs">
+                          <strong>Size:</strong> {notification.data.package_size}
+                        </p>
+                        {notification.data.recipient_name && (
+                          <p className="text-blue-800 text-xs">
+                            <strong>Recipient:</strong> {notification.data.recipient_name}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-gray-400">
+                        {new Date(notification.timestamp).toLocaleTimeString()}
+                      </span>
+                      {!notification.read && (
+                        <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                      )}
+                    </div>
+
+                   
+                    {(isRide || isCourier) && !notification.data?.accepted && (
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onAcceptRide(notification.data.id);
+                            onMarkAsRead(notification.id);
+                          }}
+                          className={`flex-1 py-2 px-3 rounded-lg text-sm hover:bg-green-600 transition-colors ${
+                            isCourier ? 'bg-blue-500 text-white' : 'bg-green-500 text-white'
+                          }`}
+                        >
+                          {isCourier ? 'Accept Delivery' : 'Accept Ride'}
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeclineRide(notification.data.id);
+                            onMarkAsRead(notification.id);
+                          }}
+                          className="flex-1 bg-gray-500 text-white py-2 px-3 rounded-lg text-sm hover:bg-gray-600 transition-colors"
+                        >
+                          Decline
+                        </button>
+                      </div>
                     )}
                   </div>
-
-                
-                  {notification.type === 'ride_request' && !notification.data?.accepted && (
-                    <div className="flex gap-2 mt-3">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onAcceptRide(notification.data.id);
-                          onMarkAsRead(notification.id);
-                        }}
-                        className="flex-1 bg-green-500 text-white py-2 px-3 rounded-lg text-sm hover:bg-green-600 transition-colors"
-                      >
-                        Accept
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeclineRide(notification.data.id);
-                          onMarkAsRead(notification.id);
-                        }}
-                        className="flex-1 bg-gray-500 text-white py-2 px-3 rounded-lg text-sm hover:bg-gray-600 transition-colors"
-                      >
-                        Decline
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -166,17 +188,35 @@ const NotificationBell = ({ notifications, unreadCount, onMarkAsRead, onClearNot
 const PersistentNotificationBar = ({ currentNotification, onAcceptRide, onDeclineRide, onClose }) => {
   if (!currentNotification) return null;
 
+  const isCourierRequest = currentNotification.type === 'courier_request' || 
+                          currentNotification.requestType === 'courier' ||
+                          currentNotification.data?.service_type === 'courier';
+
   return (
     <div className="fixed bottom-4 right-4 left-4 md:left-auto md:right-4 md:w-96 z-50 animate-in slide-in-from-bottom duration-500">
-      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 p-4">
+      <div className={`rounded-2xl shadow-2xl border p-4 ${
+        isCourierRequest 
+          ? 'bg-blue-50 border-blue-200' 
+          : 'bg-green-50 border-green-200'
+      }`}>
         <div className="flex items-start gap-3">
-          <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-            <Car className="w-5 h-5 text-green-600" />
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+            isCourierRequest ? 'bg-blue-100' : 'bg-green-100'
+          }`}>
+            {isCourierRequest ? (
+              <Package className="w-5 h-5 text-blue-600" />
+            ) : (
+              <Car className="w-5 h-5 text-green-600" />
+            )}
           </div>
           
           <div className="flex-1">
             <div className="flex justify-between items-start mb-2">
-              <h4 className="font-semibold text-gray-800">New Ride Request</h4>
+              <h4 className={`font-semibold ${
+                isCourierRequest ? 'text-blue-800' : 'text-green-800'
+              }`}>
+                {isCourierRequest ? '📦 Package Delivery Request' : '🚗 Ride Request'}
+              </h4>
               <button
                 onClick={onClose}
                 className="text-gray-400 hover:text-gray-600"
@@ -185,12 +225,43 @@ const PersistentNotificationBar = ({ currentNotification, onAcceptRide, onDeclin
               </button>
             </div>
             
-            <p className="text-gray-600 text-sm mb-3">
+            <p className={`text-sm mb-3 ${
+              isCourierRequest ? 'text-blue-700' : 'text-green-700'
+            }`}>
               {currentNotification.data.pickup_address} → {currentNotification.data.dropoff_address}
             </p>
+
+            
+            {isCourierRequest && currentNotification.data.package_description && (
+              <div className={`rounded-lg p-2 mb-3 ${
+                isCourierRequest ? 'bg-blue-100' : 'bg-green-100'
+              }`}>
+                <p className={`text-sm font-medium ${
+                  isCourierRequest ? 'text-blue-800' : 'text-green-800'
+                }`}>
+                  📦 {currentNotification.data.package_description}
+                </p>
+                {currentNotification.data.package_size && (
+                  <p className={`text-xs mt-1 ${
+                    isCourierRequest ? 'text-blue-700' : 'text-green-700'
+                  }`}>
+                    Size: {currentNotification.data.package_size}
+                  </p>
+                )}
+                {currentNotification.data.recipient_name && (
+                  <p className={`text-xs mt-1 ${
+                    isCourierRequest ? 'text-blue-700' : 'text-green-700'
+                  }`}>
+                    Recipient: {currentNotification.data.recipient_name}
+                  </p>
+                )}
+              </div>
+            )}
             
             <div className="flex justify-between items-center">
-              <span className="text-lg font-bold text-gray-800">
+              <span className={`text-lg font-bold ${
+                isCourierRequest ? 'text-blue-800' : 'text-green-800'
+              }`}>
                 Ksh {currentNotification.data.fare}
               </span>
               
@@ -209,9 +280,13 @@ const PersistentNotificationBar = ({ currentNotification, onAcceptRide, onDeclin
                     onAcceptRide(currentNotification.data.id);
                     onClose();
                   }}
-                  className="px-4 py-2 bg-green-500 text-white rounded-lg text-sm hover:bg-green-600 transition-colors"
+                  className={`px-4 py-2 rounded-lg text-sm text-white hover:opacity-90 transition-colors ${
+                    isCourierRequest 
+                      ? 'bg-blue-500 hover:bg-blue-600' 
+                      : 'bg-green-500 hover:bg-green-600'
+                  }`}
                 >
-                  Accept
+                  {isCourierRequest ? 'Accept Delivery' : 'Accept Ride'}
                 </button>
               </div>
             </div>
@@ -389,49 +464,71 @@ const DriverDash = () => {
         }
     };
 
-    const showPersistentNotificationBar = (data) => {
-        setCurrentNotification({
-            type: 'ride_request',
-            data: data,
-            timestamp: new Date()
-        });
-        setShowPersistentNotification(true);
-        
-        
-        setTimeout(() => {
-            if (isMountedRef.current) {
-                setShowPersistentNotification(false);
-            }
-        }, 30000);
-    };
+    const showPersistentNotificationBar = (data, requestType = 'ride') => {
+  setCurrentNotification({
+    type: requestType === 'courier' ? 'courier_request' : 'ride_request',
+    data: data,
+    requestType: requestType, 
+    timestamp: new Date()
+  });
+  setShowPersistentNotification(true);
+  
+  setTimeout(() => {
+    if (isMountedRef.current) {
+      setShowPersistentNotification(false);
+    }
+  }, 30000);
+};
 
    
 const sendMessage = async () => {
-  if (!newMessage.trim() || !currentChatRide) return;
+  if (!newMessage.trim() || !currentChatRide) {
+    console.log('❌ [Chat] Cannot send - no message or no ride');
+    return;
+  }
 
   try {
     
+    const customerId = currentChatRide.customer_id || 
+                      currentChatRide.customer?.id || 
+                      currentChatRide.customer;
+
+    console.log('💬 [Chat DEBUG] Starting to send message:', {
+      message: newMessage,
+      rideId: currentChatRide.id,
+      customerId: customerId,
+      currentChatRide: currentChatRide
+    });
+
+    if (!customerId) {
+      console.error('❌ [Chat] No customerId found in currentChatRide:', currentChatRide);
+      return;
+    }
+
     await ChatService.sendDriverMessage(
       currentChatRide.id, 
       newMessage, 
-      currentChatRide.customer_id || currentChatRide.customer?.id
+      customerId
     );
 
-   
-    const newChatMessage = ChatService.formatMessage({
+    console.log('✅ [Chat DEBUG] Message sent successfully');
+
+    
+    const sentMessage = {
+      id: Date.now() + Math.random(),
       message: newMessage,
       sender: 'driver',
       timestamp: new Date().toISOString(),
-      sender_name: 'You'
-    }, 'driver');
+      sender_name: sessionStorage.getItem('user_name') || 'You',
+      isCurrentUser: true,
+      ride_id: currentChatRide.id
+    };
 
-    setChatMessages(prev => [...prev, newChatMessage]);
+    setChatMessages(prev => [...prev, sentMessage]);
     setNewMessage('');
 
   } catch (error) {
     console.error('❌ [Chat] Error sending message:', error);
-    
-    console.error('Failed to send message:', error);
   }
 };
 
@@ -457,22 +554,22 @@ const openChat = (ride) => {
     };
 
   
+
 const handleChatMessage = (data) => {
-  console.log('💬 [Driver] New chat message received - FULL DATA:', data);
+  console.log('💬 [Driver] New chat message received:', data);
   
   
-  const newChatMessage = {
+  const formattedMessage = {
     id: Date.now() + Math.random(),
-    message: data.message || data.content,
-    sender: data.sender_type || data.sender || 'customer',
+    message: data.message,
+    sender: 'customer',
     timestamp: data.timestamp || new Date().toISOString(),
     sender_name: data.sender_name || 'Customer',
-    isCurrentUser: false,
     ride_id: data.ride_id
   };
-  
-  console.log('✅ [Driver] Message added to chat:', newChatMessage);
-  setChatMessages(prev => [...prev, newChatMessage]);
+
+  console.log('✅ [Driver] Formatted message:', formattedMessage);
+  setChatMessages(prev => [...prev, formattedMessage]);
   
   
   if (!showChat) {
@@ -527,61 +624,220 @@ const handleChatMessage = (data) => {
 
     const handleLocationUpdate = (data) => console.log('📍 Location update:', data);
     
-const setupWebSocket = () => {
-  if (wsInitializedRef.current) return;
+
+const setupWebSocket = async () => {
+  console.log('🟡 [DriverDash] ========== SETUP WEBSOCKET START ==========');
   
   const token = sessionStorage.getItem('access_token');
   const driverId = sessionStorage.getItem('user_id');
   const userType = sessionStorage.getItem('user_type');
 
-  console.log(`🟡 [Driver WS Setup] User: ${driverId}, Type: ${userType}, Token: ${token ? 'Present' : 'Missing'}`);
+  console.log(`🟡 [DriverDash] Credentials - driverId: ${driverId}, userType: ${userType}, hasToken: ${!!token}`);
 
   if (!driverId || !token || !['driver', 'boda_rider'].includes(userType)) {
-    console.log('❌ [Driver WS Setup] Missing credentials or wrong user type');
+    console.log('❌ [DriverDash] Missing credentials or wrong user type');
+    setConnectionState('error');
     return;
   }
 
-  wsInitializedRef.current = true;
+  try {
+   
+    console.log('🟡 [DriverDash] Clearing all handlers...');
+    websocketService.clearAllHandlers();
 
-  websocketService.clearAllHandlers();
+    
+    console.log('🟡 [DriverDash] Registering handlers...');
 
+   
+    websocketService.onMessage('new_ride_request', (data) => {
+      console.log('🚗 [DriverDash] ========== NEW RIDE REQUEST HANDLER CALLED ==========');
+
+      const isCourierRequest = data.service_type === 'courier' || 
+                          data.request_type === 'courier' ||
+                          data.vehicle_type?.includes('courier');
   
-  websocketService.onMessage('connection_established', handleConnectionEstablished);
-  websocketService.onMessage('new_ride_request', handleNewRideRequest);
-  websocketService.onMessage('ride_accepted_self', handleRideAcceptedSelf);
-  websocketService.onMessage('ride_taken', handleRideTaken);
-  websocketService.onMessage('ride_status_update', handleRideStatusUpdate);
-  websocketService.onMessage('location_update', handleLocationUpdate);
-  websocketService.onMessage('customer_message', handleChatMessage);
-  websocketService.onMessage('ride_cancelled', handleRideStatusUpdate);
-
+  const requestType = isCourierRequest ? 'courier' : 'ride';
   
-  websocketService.onMessage('error', (data) => {
-    console.error('❌ [WebSocket] Error:', data);
-    setConnectionState('error');
+  console.log(`📦 [DriverDash] Request type: ${requestType}`, data);
+      
+      const formattedData = {
+    id: data.id || data.ride_id,
+    ride_id: data.ride_id || data.id,
+    customer_name: data.customer_name || 'Unknown Customer',
+    customer_phone: data.customer_phone || 'N/A',
+    pickup_address: data.pickup_address || 'Unknown',
+    dropoff_address: data.dropoff_address || 'Unknown',
+    fare: parseFloat(data.fare) || 0,
+    vehicle_type: data.vehicle_type || (isCourierRequest ? 'courier' : 'economy'),
+    service_type: data.service_type || requestType,
+    request_type: requestType, 
+    distance_to_pickup_km: parseFloat(data.distance) || 0,
+    estimated_pickup_time: data.estimated_pickup_time || 'Unknown',
+    created_at: data.created_at || new Date().toISOString(),
+    
+    
+    ...(isCourierRequest && {
+      package_description: data.package_description,
+      package_size: data.package_size,
+      recipient_name: data.recipient_name,
+      recipient_phone: data.recipient_phone,
+      delivery_instructions: data.delivery_instructions
+    })
+  };
+
+      console.log('🚗 [DriverDash] Formatted data:', formattedData);
+  if (isCourierRequest) {
+    handleCourierRequest(formattedData);
+  } else {
+    handleRideRequest(formattedData);
+  }
+});
+
+
+const handleCourierRequest = (data) => {
+  console.log('📦 [DriverDash] Processing courier request:', data);
+  
+  addNotification({
+    type: 'courier_request', 
+    title: '📦 Package Delivery Request',
+    message: `You have a courier request - ${data.package_description || 'Package delivery'}`,
+    data: data
   });
+  
+  showPersistentNotificationBar(data, 'courier');
+};
+
+
+const handleRideRequest = (data) => {
+  console.log('🚗 [DriverDash] Processing ride request:', data);
+  
+  addNotification({
+    type: 'ride_request', 
+    title: '🚗 Ride Request',
+    message: `${data.pickup_address} → ${data.dropoff_address}`,
+    data: data
+  });
+  
+  showPersistentNotificationBar(data, 'ride');
+};
+
+    
+    websocketService.onMessage('customer_message', (data) => {
+      console.log('💬 [DriverDash] Customer message received:', data);
+      handleChatMessage(data);
+    });
+
+   
+    websocketService.onMessage('ride_accepted_self', (data) => {
+      console.log('🎯 [DriverDash] Ride accepted confirmation:', data);
+      handleRideAcceptedSelf(data);
+    });
+
+    websocketService.onMessage('ride_taken', (data) => {
+      console.log('🚫 [DriverDash] Ride taken by another driver:', data);
+      handleRideTaken(data);
+    });
+
+    websocketService.onMessage('ride_status_update', (data) => {
+      console.log('🔄 [DriverDash] Ride status update:', data);
+      handleRideStatusUpdate(data);
+    });
+
+    websocketService.onMessage('driver_arrived', (data) => {
+      console.log('✅ [DriverDash] Driver arrived:', data);
+      
+    });
+
+    websocketService.onMessage('ride_declined', (data) => {
+      console.log('❌ [DriverDash] Ride declined:', data);
+     
+    });
+
+    websocketService.onMessage('location_update', (data) => {
+      console.log('📍 [DriverDash] Location update:', data);
+      handleLocationUpdate(data);
+    });
+
+    
+    websocketService.onMessage('connection_established', () => {
+      console.log('✅ [DriverDash] Connection established');
+      setConnectionState('connected');
+      setHasTriedConnecting(true);
+      fetchDashboardData();
+    });
+
+    
+    websocketService.onMessage('*', (data, type) => {
+      console.log(`🔍 [DEBUG] Received ${type}:`, data);
+    });
+
+    
+    console.log('🟡 [DriverDash] Connecting to WebSocket...');
+    setConnectionState('connecting');
+    
+    await websocketService.connect(userType, driverId, token);
+    
+    console.log('✅ [DriverDash] WebSocket connection completed');
+
+  } catch (error) {
+    console.error('❌ [DriverDash] WebSocket setup error:', error);
+    setConnectionState('error');
+    setHasTriedConnecting(true);
+  }
+
+  console.log('🟡 [DriverDash] ========== SETUP WEBSOCKET END ==========');
+};
+
+
+useEffect(() => {
+  console.log('🟡 [DriverDash] Component mounting');
+  isMountedRef.current = true;
 
  
-  console.log('🔄 [Driver WS] Connecting WebSocket...');
+  setupWebSocket();
+
   
-  const connectResult = websocketService.connect(userType, driverId, token);
+  fetchDashboardData();
+
+ 
+  startLocationTracking();
+
   
-  if (connectResult && typeof connectResult.catch === 'function') {
+  connectionCheckIntervalRef.current = setInterval(() => {
+    if (!isMountedRef.current) return;
+
+    const state = websocketService.getConnectionState();
+    console.log(`🔍 [DriverDash] Connection state check: ${state}`);
     
-    connectResult.catch((error) => {
-      console.error('❌ [Driver WS] Connection failed:', error);
-      setConnectionState('error');
-      wsInitializedRef.current = false; 
-    });
-  } else {
-    
-    console.log('🟡 [Driver WS] Connect did not return a Promise');
-    if (!websocketService.isConnected()) {
-      setConnectionState('error');
-      wsInitializedRef.current = false;
+    if (state !== 'connected') {
+      setConnectionState(state);
     }
-  }
-};
+
+   
+    if (state === 'disconnected' && !websocketService.isConnecting) {
+      console.log('🔄 [DriverDash] Reconnecting...');
+      wsInitializedRef.current = false;
+      setupWebSocket();
+    }
+  }, 5000);
+
+
+  return () => {
+    console.log('🟡 [DriverDash] Component unmounting - cleanup');
+    isMountedRef.current = false;
+    
+    clearInterval(connectionCheckIntervalRef.current);
+    
+    if (locationWatchIdRef.current) {
+      navigator.geolocation.clearWatch(locationWatchIdRef.current);
+    }
+
+    
+    websocketService.clearComponentHandlers('DriverDash');
+  };
+}, []); 
+
+
 
 
 const fetchAvailableRides = async () => {
@@ -694,7 +950,7 @@ const fetchAvailableRides = async () => {
     </div>
 )}
 
-    // ================= Location Tracking =================
+    
     const updateDriverLocation = async (location) => {
         const now = Date.now();
         if (now - lastUpdateTimeRef.current < 15000) return;
@@ -759,30 +1015,46 @@ const fetchAvailableRides = async () => {
     };
 
 
-    useEffect(() => {
-        isMountedRef.current = true;
+ useEffect(() => {
+  console.log('🟡 [DriverDash] Component mounting');
+  isMountedRef.current = true;
 
-        if ('Notification' in window && Notification.permission === 'default')
-            Notification.requestPermission();
+ 
+  console.log('🟡 [DriverDash] Setting up WebSocket...');
+  setupWebSocket();
 
-        fetchDashboardData().then(() => setupWebSocket());
-        startLocationTracking();
+  
+  fetchDashboardData().then(() => {
+    console.log('✅ [DriverDash] Initial data loaded');
+  });
 
-        connectionCheckIntervalRef.current = setInterval(() => {
-            if (!isMountedRef.current) return;
-            const state = websocketService.getConnectionState?.() || 'disconnected';
-            setConnectionState(state);
+  
+  startLocationTracking();
 
-            if (state === 'disconnected' && !websocketService.isConnecting) setupWebSocket();
-        }, 5000);
+  
+  connectionCheckIntervalRef.current = setInterval(() => {
+    if (!isMountedRef.current) return;
+    const state = websocketService.getConnectionState?.() || 'disconnected';
+    setConnectionState(state);
 
-        return () => {
-            isMountedRef.current = false;
-            clearInterval(connectionCheckIntervalRef.current);
-            if (locationWatchIdRef.current) navigator.geolocation.clearWatch(locationWatchIdRef.current);
-            websocketService.disconnect();
-        };
-    }, []);
+    if (state === 'disconnected' && !websocketService.isConnecting) {
+      console.log('🔄 [Connection Check] WebSocket disconnected, reconnecting...');
+      setupWebSocket();
+    }
+  }, 5000);
+
+  return () => {
+    console.log('🟡 [DriverDash] Component unmounting - cleanup');
+    isMountedRef.current = false;
+    clearInterval(connectionCheckIntervalRef.current);
+    if (locationWatchIdRef.current) {
+      navigator.geolocation.clearWatch(locationWatchIdRef.current);
+    }
+    
+   
+    websocketService.clearComponentHandlers('DriverDash');
+  };
+}, []);
 
   
     useEffect(() => {
@@ -806,21 +1078,37 @@ const fetchAvailableRides = async () => {
     }, [dashboardData?.driver_status?.is_online, dashboardData?.current_ride]);
 
 
-    const acceptRide = async (rideId) => {
-        try {
-            await DriverService.acceptRide(rideId);
-            setShowPersistentNotification(false);
-            fetchDashboardData();
-            const cur = dashboardDataRef.current;
-            websocketService.sendRideMessage(rideId, 'ride_accepted', {
-                driver_id: sessionStorage.getItem('user_id'),
-                driver_name: `${cur?.user?.first_name || ''} ${cur?.user?.last_name || ''}`.trim(),
-                driver_phone: cur?.user?.phone_number || '',
-                vehicle_type: cur?.vehicle_info?.vehicle_type || '',
-                license_plate: cur?.vehicle_info?.license_plate || ''
-            });
-        } catch (err) { console.error(err); setError('Failed to accept ride'); }
-    };
+   const acceptRide = async (rideId) => {
+    try {
+        console.log(`🟡 [Driver] Accepting ride: ${rideId}`);
+        
+        await DriverService.acceptRide(rideId);
+        setShowPersistentNotification(false);
+        
+        
+        await fetchDashboardData();
+        
+        
+        const driverData = dashboardDataRef.current;
+        const driverInfo = {
+            driver_id: sessionStorage.getItem('user_id'),
+            driver_name: `${driverData?.user?.first_name || ''} ${driverData?.user?.last_name || ''}`.trim(),
+            driver_phone: driverData?.user?.phone_number || '',
+            vehicle_type: driverData?.vehicle_info?.vehicle_type || '',
+            license_plate: driverData?.vehicle_info?.license_plate || '',
+            timestamp: new Date().toISOString()
+        };
+
+        console.log('📢 [Driver] Notifying customer about acceptance:', driverInfo);
+        
+        
+        websocketService.sendRideMessage(rideId, 'ride_accepted', driverInfo);
+        
+    } catch (err) { 
+        console.error('❌ [Driver] Error accepting ride:', err); 
+        setError('Failed to accept ride'); 
+    }
+};
 
     const declineRide = async (rideId) => {
     try { 
@@ -1107,6 +1395,7 @@ const fetchAvailableRides = async () => {
                     first_name: dashboardData.current_ride.customer_name?.split(' ')[0] || 'Customer',
                     last_name: dashboardData.current_ride.customer_name?.split(' ')[1] || '',
                 } : null}
+                currentUserType="driver"
                 currentRide={currentChatRide}
             />
 
@@ -1446,7 +1735,10 @@ const DashboardView = ({ data, onStatusUpdate, onRideAction, currentLocation, no
             </div>
         ) : (
             <div className="space-y-4 max-h-96 overflow-y-auto">
-                {pendingRides.map((ride, index) => (
+                {pendingRides.map((ride, index) => {
+  const isCourierRequest = ride.service_type === 'courier' || 
+                          ride.request_type === 'courier' ||
+                          ride.vehicle_type?.includes('courier');
                     <div 
                         key={ride.id} 
                         className="bg-white/5 rounded-xl p-4 border border-emerald-500/20 hover:border-emerald-500/40 transition-all duration-300 hover:bg-white/10"
@@ -1510,7 +1802,8 @@ const DashboardView = ({ data, onStatusUpdate, onRideAction, currentLocation, no
                             </div>
                         </div>
                     </div>
-                ))}
+    
+    })}
             </div>
         )}
     </div>

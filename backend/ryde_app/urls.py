@@ -18,6 +18,7 @@ urlpatterns = [
     path('rides/<int:ride_id>/', views.ride_detail, name='ride_detail'),
     path('rides/my-rides/', views.user_rides, name='user_rides'),
     path('driver/location/', views.update_driver_location, name='update_driver_location'),
+    path('rides/calculate-route/', views.calculate_route, name='calculate_route'),
 
 #map 
     path('test-google-api/', views.test_google_api, name='test_google_api'),
@@ -37,6 +38,9 @@ urlpatterns = [
     path('rides/<int:ride_id>/messages/', views.ride_messages, name='ride_messages'),
     path('rides/<int:ride_id>/send-message/', views.send_ride_message, name='send_ride_message'),
     path('rides/<int:ride_id>/decline/', views.decline_ride, name='decline_ride'),
+    
+    path('reverse-geocode/', views.reverse_geocode, name='reverse_geocode'),
+    path('set-current-location/', views.set_current_location, name='set_current_location'),
 
 #admin approval
     path('admin/pending-drivers/', views.pending_drivers, name='pending_drivers'),
@@ -55,6 +59,9 @@ path('admin/drivers/<int:user_id>/suspend/', views.suspend_driver, name='suspend
 path('admin/emergency-requests/', views.admin_emergency_requests, name='admin_emergency_requests'),
 path('admin/reports/earnings/', views.admin_earnings_report, name='admin_earnings_report'),
 path('admin/reports/usage/', views.admin_usage_report, name='admin_usage_report'), 
+ path('admin/drivers/<int:user_id>/documents/<str:document_type>/download/', 
+         views.download_driver_document, 
+         name='download_driver_document'),
 
 # Notification URLs
 path('admin/notifications/', views.admin_notifications, name='admin_notifications'),
@@ -66,5 +73,7 @@ path('admin/drivers/pending-with-documents/', views.pending_drivers_with_documen
 path('admin/drivers/<int:user_id>/documents/', views.driver_documents, name='driver_documents'),
 path('admin/drivers/<int:user_id>/approve-with-vehicle/', views.approve_driver_with_vehicle, name='approve_driver_with_vehicle'),
 path('admin/drivers/approved/', views.get_approved_drivers, name='get_approved_drivers'),
+
+
 
 ]

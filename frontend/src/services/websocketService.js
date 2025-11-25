@@ -1,7 +1,9 @@
 class WebSocketService {
   constructor() {
     this.socket = null;
-    this.messageHandlers = new Map();
+   
+    this.messageHandlers = {};
+    this.handlerRegistrations = {};
     this.queue = [];
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
@@ -13,72 +15,178 @@ class WebSocketService {
     this.manualDisconnect = false;
   }
 
-  connect(userType, id, token) {
-  return new Promise((resolve, reject) => { 
-    if (this.isConnecting) {
-      resolve(); 
-      return;
+
+  registerHandler(type, handler, componentId = 'unknown') {
+    console.log(`🔧 [WebSocket] Registering handler for ${type} from ${componentId}`);
+    
+   
+    if (!this.messageHandlers[type]) {
+      this.messageHandlers[type] = [];
+      this.handlerRegistrations[type] = [];
     }
-    if (this.socket) this.disconnect();
+    
+    
+    this.messageHandlers[type].push(handler);
+    this.handlerRegistrations[type].push(componentId);
+    
+    console.log(`🔧 [WebSocket] Now have ${this.messageHandlers[type].length} handlers for ${type}`);
+  }
 
-    this.userType = userType;
-    this.userId = id;
-    this.token = token;
-    this.manualDisconnect = false;
-    this.isConnecting = true;
-
-    const wsUrl = `ws://localhost:8000/ws/${userType}/${id}/?token=${encodeURIComponent(token)}`;
-
-    console.log(`🟡 [WebSocket] Connecting to: ${wsUrl}`);
-    this.socket = new WebSocket(wsUrl);
-
-    this.socket.onopen = () => {
-      console.log(`✅ [WebSocket] Connected as ${userType}`);
-      this.isConnecting = false;
-      this.reconnectAttempts = 0;
-
-      this.startHeartbeat();
-
-      if (this.queue.length > 0) {
-        console.log(`📤 [WebSocket] Sending ${this.queue.length} queued messages`);
-        this.queue.forEach(msg => this.socket.send(JSON.stringify(msg)));
-        this.queue = [];
-      }
-
-      const handler = this.messageHandlers.get('connection_established');
-      if (handler) handler();
-      
-      resolve(); 
-    };
-
-    this.socket.onmessage = (event) => {
+handleMessage(message) {
+  console.log(`📨 [WebSocket] Received full message:`, message);
+  
+  
+  const messageType = message.type;
+  const messageData = message.data || message; 
+  
+  console.log(`📨 [WebSocket] Processing: ${messageType}`, messageData);
+  
+  const handlers = this.messageHandlers[messageType];
+  if (handlers && handlers.length > 0) {
+    console.log(`🔧 [WebSocket] Executing ${handlers.length} handler(s) for ${messageType}`);
+    handlers.forEach(handler => {
       try {
-        const data = JSON.parse(event.data);
+        handler(messageData);
+      } catch (error) {
+        console.error(`❌ [WebSocket] Handler error for ${messageType}:`, error);
+      }
+    });
+  } else {
+    console.log(`⚠️ [WebSocket] No handler for ${messageType}`);
+    console.log(`🔍 [WebSocket] Available handlers:`, Object.keys(this.messageHandlers));
+  }
+}
+
+  
+  clearComponentHandlers(componentId) {
+    console.log(`🔧 [WebSocket] Clearing handlers for ${componentId}`);
+    
+    Object.keys(this.messageHandlers).forEach(type => {
+      const handlers = this.messageHandlers[type];
+      const registrations = this.handlerRegistrations[type];
+      
+      if (handlers && registrations) {
         
-        if (data.type === 'pong') {
-          console.log('💓 [WebSocket] Heartbeat confirmed');
-          return;
+        const indicesToRemove = [];
+        registrations.forEach((registeredComponentId, index) => {
+          if (registeredComponentId === componentId) {
+            indicesToRemove.push(index);
+          }
+        });
+        
+        
+        indicesToRemove.sort((a, b) => b - a).forEach(index => {
+          handlers.splice(index, 1);
+          registrations.splice(index, 1);
+          console.log(`🔧 [WebSocket] Removed handler for ${type} at index ${index}`);
+        });
+        
+       
+        if (handlers.length === 0) {
+          delete this.messageHandlers[type];
+          delete this.handlerRegistrations[type];
+        }
+      }
+    });
+  }
+
+  
+  clearAllHandlers() {
+    this.messageHandlers = {};
+    this.handlerRegistrations = {};
+    console.log('🔧 [WebSocket] Cleared all handlers');
+  }
+
+  
+  debugHandlers() {
+    console.log('🔍 [WebSocket Debug] Current handlers:');
+    Object.keys(this.messageHandlers).forEach(type => {
+      console.log(`  ${type}: ${this.messageHandlers[type].length} handler(s)`);
+      this.handlerRegistrations[type].forEach((compId, index) => {
+        console.log(`    [${index}] -> ${compId}`);
+      });
+    });
+  }
+
+  connect(userType, id, token) {
+    return new Promise((resolve, reject) => { 
+      if (this.isConnecting) {
+        resolve(); 
+        return;
+      }
+      if (this.socket) this.disconnect();
+
+      this.userType = userType;
+      this.userId = id;
+      this.token = token;
+      this.manualDisconnect = false;
+      this.isConnecting = true;
+
+      const wsUrl = `ws://localhost:8000/ws/${userType}/${id}/?token=${encodeURIComponent(token)}`;
+
+      console.log(`🟡 [WebSocket] Connecting to: ${wsUrl}`);
+      this.socket = new WebSocket(wsUrl);
+
+      this.socket.onopen = () => {
+        console.log(`✅ [WebSocket] Connected as ${userType}`);
+        this.isConnecting = false;
+        this.reconnectAttempts = 0;
+
+        
+        this.debugHandlers();
+
+        this.startHeartbeat();
+
+        if (this.queue.length > 0) {
+          console.log(`📤 [WebSocket] Sending ${this.queue.length} queued messages`);
+          this.queue.forEach(msg => this.socket.send(JSON.stringify(msg)));
+          this.queue = [];
+        }
+
+        
+        const connectionHandlers = this.messageHandlers['connection_established'];
+        if (connectionHandlers) {
+          console.log(`🔧 [WebSocket] Calling ${connectionHandlers.length} connection handlers`);
+          connectionHandlers.forEach(handler => {
+            try {
+              handler();
+            } catch (error) {
+              console.error('❌ [WebSocket] Connection handler error:', error);
+            }
+          });
         }
         
-        this.handleMessage(data);
-      } catch (e) {
-        console.error('❌ [WebSocket] Message parsing error:', e);
-      }
-    };
+        resolve(); 
+      };
 
-    this.socket.onclose = () => {
-      console.log(`🔴 [WebSocket] Disconnected`);
-      this.isConnecting = false;
-      if (!this.manualDisconnect) this.attemptReconnect(userType, id, token);
-    };
+      this.socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'pong') {
+            console.log('💓 [WebSocket] Heartbeat confirmed');
+            return;
+          }
+          
+          this.handleMessage(data);
+        } catch (e) {
+          console.error('❌ [WebSocket] Message parsing error:', e);
+        }
+      };
 
-    this.socket.onerror = (error) => {
-      console.error('❌ [WebSocket] Error:', error);
-      this.isConnecting = false;
-      reject(error); 
-    };
-  });
-}
+      this.socket.onclose = () => {
+        console.log(`🔴 [WebSocket] Disconnected`);
+        this.isConnecting = false;
+        if (!this.manualDisconnect) this.attemptReconnect(userType, id, token);
+      };
+
+      this.socket.onerror = (error) => {
+        console.error('❌ [WebSocket] Error:', error);
+        this.isConnecting = false;
+        reject(error); 
+      };
+    });
+  }
 
   sendMessage(type, data) {
     const message = { type, data };
@@ -101,17 +209,8 @@ class WebSocketService {
     });
   }
 
-  onMessage(type, handler) {
-    this.messageHandlers.set(type, handler);
-  }
-
-  clearAllHandlers() {
-    this.messageHandlers.clear();
-  }
-
-  handleMessage(message) {
-    const handler = this.messageHandlers.get(message.type);
-    if (handler) handler(message.data);
+  onMessage(type, handler, componentId = 'unknown') {
+    this.registerHandler(type, handler, componentId);
   }
 
   isConnected() {
@@ -135,7 +234,6 @@ class WebSocketService {
     }
   }
 
-  
   startHeartbeat() {
     this.heartbeatInterval = setInterval(() => {
       if (this.socket && this.socket.readyState === WebSocket.OPEN) {
@@ -148,12 +246,10 @@ class WebSocketService {
     this.manualDisconnect = true;
     this.queue = [];
 
-    
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
-
 
     this.clearAllHandlers(); 
     if (this.socket) this.socket.close(1000, 'Manual disconnect');

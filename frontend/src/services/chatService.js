@@ -1,46 +1,50 @@
 import websocketService from './websocketService';
 
 class ChatService {
-  
   async sendCustomerMessage(rideId, message, driverId) {
     const messageData = {
-      type: 'chat_message', 
       ride_id: rideId,
       message: message,
-      sender: 'customer',
-      receiver: 'driver', 
+      sender_id: sessionStorage.getItem('user_id'),
+      sender_name: sessionStorage.getItem('user_name') || 'Customer',
+      sender_type: 'customer',
       receiver_id: driverId,
-      timestamp: new Date().toISOString(),
-      sender_name: sessionStorage.getItem('user_name') || 'Customer'
+      receiver_type: 'driver',
+      timestamp: new Date().toISOString()
     };
 
-    return websocketService.sendMessage('chat_message', messageData);
+    console.log('💬 [ChatService] Sending customer message:', messageData);
+    
+    
+    return websocketService.sendRideMessage(rideId, 'customer_message', messageData);
   }
 
- 
   async sendDriverMessage(rideId, message, customerId) {
     const messageData = {
-      type: 'chat_message', 
+      ride_id: rideId,
       message: message,
-      sender: 'driver',
-      receiver: 'customer',
+      sender_id: sessionStorage.getItem('user_id'),
+      sender_name: sessionStorage.getItem('user_name') || 'Driver',
+      sender_type: 'driver',
       receiver_id: customerId,
-      timestamp: new Date().toISOString(),
-      sender_name: sessionStorage.getItem('user_name') || 'Driver'
+      receiver_type: 'customer',
+      timestamp: new Date().toISOString()
     };
 
-    return websocketService.sendMessage('chat_message', messageData);
+    console.log('💬 [ChatService] Sending driver message:', messageData);
+    
+   
+    return websocketService.sendRideMessage(rideId, 'driver_message', messageData);
   }
 
-  
   formatMessage(messageData, currentUserType) {
     return {
-      id: Date.now() + Math.random(), 
+      id: Date.now() + Math.random(),
       message: messageData.message,
-      sender: messageData.sender_type || messageData.sender, 
+      sender: messageData.sender_type,
       timestamp: messageData.timestamp,
       sender_name: messageData.sender_name,
-      isCurrentUser: (messageData.sender_type || messageData.sender) === currentUserType,
+      isCurrentUser: messageData.sender_type === currentUserType,
       ride_id: messageData.ride_id
     };
   }

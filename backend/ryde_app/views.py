@@ -14,6 +14,7 @@ from django.conf import settings
 from django.db.models import Q, Count, Sum, Avg
 from datetime import datetime, timedelta
 from rest_framework.permissions import IsAuthenticated
+from django.http import FileResponse
 from collections import defaultdict
 
 # Authentication Views
@@ -221,18 +222,192 @@ def get_google_route(start_lat, start_lng, end_lat, end_lng):
 # Ride Views 
 @api_view(['POST'])
 def request_ride(request):
-    """Customer requests a ride with consistent backend fare calculation (no time charges)"""
+    """Customer requests a ride OR courier service - ACTUAL REQUEST ONLY"""
     if request.user.user_type != 'customer':
-        return Response({"error": "Only customers can request rides"}, status=403)
+        return Response({"error": "Only customers can request services"}, status=403)
     
     pickup_address = request.data.get('pickup_address')
     dropoff_address = request.data.get('dropoff_address')
-    vehicle_type = request.data.get('vehicle_type', 'standard')  
+    vehicle_type = request.data.get('vehicle_type', 'economy')
+    service_type = request.data.get('service_type', 'ride')
+    estimated_fare = request.data.get('estimated_fare')
     
     if not pickup_address or not dropoff_address:
         return Response({"error": "Pickup and dropoff addresses are required"}, status=400)
     
-    # Geocode addresses using Google Maps API
+    if not estimated_fare:
+        return Response({"error": "Fare calculation is required"}, status=400)
+    
+    # Geocode addresses
+    pickup_coords = geocode_address(pickup_address)
+    if not pickup_coords:
+        return Response({"error": "Could not find pickup location"}, status=400)
+    
+    dropoff_coords = geocode_address(dropoff_address)
+    if not dropoff_coords:
+        return Response({"error": "Could not find destination"}, status=400)
+    
+    # Prepare ride data
+    ride_data = {
+        'pickup_address': pickup_address,
+        'dropoff_address': dropoff_address,
+        'pickup_lat': pickup_coords['lat'],
+        'pickup_lng': pickup_coords['lng'],
+        'dropoff_lat': dropoff_coords['lat'],
+        'dropoff_lng': dropoff_coords['lng'],
+        'vehicle_type': vehicle_type,
+        'service_type': service_type,
+        'package_description': request.data.get('package_description', ''),
+        'package_size': request.data.get('package_size', ''),
+        'recipient_name': request.data.get('recipient_name', ''),
+        'recipient_phone': request.data.get('recipient_phone', ''),
+        'delivery_instructions': request.data.get('delivery_instructions', ''),
+    }
+    
+    serializer = RideSerializer(data=ride_data)
+    if serializer.is_valid():
+        # Create the ride with estimated distance/duration
+        route_info = get_google_route(pickup_coords['lat'], pickup_coords['lng'], 
+                                     dropoff_coords['lat'], dropoff_coords['lng'])
+        
+        if route_info:
+            distance_km = route_info['distance'] / 1000
+            duration_min = route_info['duration'] / 60
+        else:
+            distance_km = calculate_distance(pickup_coords['lat'], pickup_coords['lng'], 
+                                           dropoff_coords['lat'], dropoff_coords['lng'])
+            duration_min = distance_km * 2
+        
+        ride = serializer.save(
+            customer=request.user,
+            status='requested',
+            fare=estimated_fare,
+            distance_km=distance_km,
+            duration_minutes=duration_min
+        )
+        
+        # ✅ NOTIFY DRIVERS VIA WEBSOCKET
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        
+        channel_layer = get_channel_layer()
+        
+        # ✅ FIX 1: Get ALL approved drivers (not just online_drivers from DriverLocation)
+        approved_drivers = User.objects.filter(
+            user_type__in=['driver', 'boda_rider'],
+            approval_status='approved',
+            is_active=True
+        )
+        
+        print(f"📊 [Request Ride] Total approved drivers: {approved_drivers.count()}")
+        
+        notified_count = 0
+        for driver in approved_drivers:
+            # ✅ FIX 2: Try to get driver location, default to Nairobi center if not available
+            try:
+                driver_loc = DriverLocation.objects.get(driver=driver)
+                driver_lat = driver_loc.lat
+                driver_lng = driver_loc.lng
+                is_online = driver_loc.is_online
+            except DriverLocation.DoesNotExist:
+                print(f"⚠️ [Request Ride] Driver {driver.id} has no location record")
+                # Default to Nairobi center if no location
+                driver_lat = -1.2921
+                driver_lng = 36.8219
+                is_online = False
+            
+            # ✅ FIX 3: Still check if online, but continue anyway
+            if not is_online:
+                print(f"⚠️ [Request Ride] Driver {driver.id} is offline")
+                # You can either skip offline drivers or notify them anyway
+                # For now, let's skip them but log it
+                continue
+            
+            # Calculate distance
+            driver_to_pickup_distance = calculate_distance(
+                driver_lat, driver_lng,
+                pickup_coords['lat'], pickup_coords['lng']
+            )
+            
+            print(f"📍 [Request Ride] Driver {driver.id} distance to pickup: {driver_to_pickup_distance}km")
+            
+            # ✅ FIX 4: Increase radius or remove distance filter during testing
+            # In production, you might want 15-20km, but for testing use a larger radius
+            MAX_DISTANCE_KM = 50  # Increased from 20km for testing
+            
+            if driver_to_pickup_distance <= MAX_DISTANCE_KM:
+                notification_data = {
+                    'id': ride.id,
+                    'ride_id': ride.id,
+                    'customer_name': f"{ride.customer.first_name} {ride.customer.last_name}",
+                    'customer_phone': ride.customer.phone_number,
+                    'pickup_address': ride.pickup_address,
+                    'dropoff_address': ride.dropoff_address,
+                    'fare': str(ride.fare),
+                    'vehicle_type': ride.vehicle_type,
+                    'service_type': ride.service_type,
+                    'distance': f"{driver_to_pickup_distance:.1f} km",
+                    'estimated_pickup_time': f"{int(driver_to_pickup_distance * 3)} min",
+                    'created_at': ride.created_at.isoformat(),
+                }
+                
+                # Add courier details for non-ride services
+                if ride.service_type != 'ride':
+                    notification_data.update({
+                        'package_description': ride.package_description,
+                        'package_size': ride.package_size,
+                        'recipient_name': ride.recipient_name,
+                        'is_courier': True
+                    })
+                
+                print(f"📢 [WebSocket] Sending new_ride_request to driver_{driver.id}")
+                
+                try:
+                    async_to_sync(channel_layer.group_send)(
+                        f"driver_{driver.id}",
+                        {
+                            "type": "new_ride_request",
+                            "data": notification_data
+                        }
+                    )
+                    notified_count += 1
+                    print(f"✅ [WebSocket] Notified driver {driver.id}")
+                except Exception as e:
+                    print(f"❌ [WebSocket] Failed to notify driver {driver.id}: {str(e)}")
+            else:
+                print(f"⏭️ [Request Ride] Driver {driver.id} too far ({driver_to_pickup_distance}km > {MAX_DISTANCE_KM}km)")
+        
+        print(f"✅ [Request Ride] Notified {notified_count} drivers for ride {ride.id}")
+        
+        response_data = RideSerializer(ride).data
+        response_data.update({
+            'distance_km': round(distance_km, 2),
+            'duration_min': round(duration_min, 2),
+            'drivers_notified': notified_count,  # Include this in response
+        })
+        if route_info:
+            response_data['route_polyline'] = route_info['polyline']
+        
+        return Response(response_data, status=201)
+    
+    return Response(serializer.errors, status=400)
+
+
+@api_view(['POST'])
+def calculate_route(request):
+    """Calculate route and fare estimates WITHOUT sending ride request to drivers"""
+    if request.user.user_type != 'customer':
+        return Response({"error": "Only customers can calculate routes"}, status=403)
+    
+    pickup_address = request.data.get('pickup_address')
+    dropoff_address = request.data.get('dropoff_address')
+    vehicle_type = request.data.get('vehicle_type', 'economy')
+    service_type = request.data.get('service_type', 'ride')
+
+    if not pickup_address or not dropoff_address:
+        return Response({"error": "Pickup and dropoff addresses are required"}, status=400)
+    
+    # Geocode addresses
     pickup_coords = geocode_address(pickup_address)
     if not pickup_coords:
         return Response({
@@ -244,145 +419,84 @@ def request_ride(request):
             ]
         }, status=400)
     
-    # Geocode dropoff address
     dropoff_coords = geocode_address(dropoff_address)
     if not dropoff_coords:
         return Response({
             "error": "Could not find destination.",
             "suggestions": [
                 "Be more specific (include area, city)",
-                "Check spelling",
+                "Check spelling", 
                 "Try format: 'Street, Area, City'"
             ]
         }, status=400)
     
-    # Use coordinates from geocoding
-    pickup_lat = pickup_coords['lat']
-    pickup_lng = pickup_coords['lng']
-    dropoff_lat = dropoff_coords['lat']
-    dropoff_lng = dropoff_coords['lng']
-    
-    # Get route information using Google Directions API
-    route_info = get_google_route(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
+    # Get route information
+    route_info = get_google_route(pickup_coords['lat'], pickup_coords['lng'], 
+                                 dropoff_coords['lat'], dropoff_coords['lng'])
     
     try:
         if route_info:
-            
-            distance_km = route_info['distance'] / 1000  
-            duration_min = route_info['duration'] / 60   
+            distance_km = route_info['distance'] / 1000
+            duration_min = route_info['duration'] / 60
         else:
-           
-            distance_km = calculate_distance(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
-            duration_min = distance_km * 2  
+            distance_km = calculate_distance(pickup_coords['lat'], pickup_coords['lng'], 
+                                           dropoff_coords['lat'], dropoff_coords['lng'])
+            duration_min = distance_km * 2
         
-       
+        # Calculate fares for all vehicle types
         fare_rates = {
-            'standard': {'base': 100, 'per_km': 50},
+            'economy': {'base': 100, 'per_km': 50},
             'premium': {'base': 150, 'per_km': 75},
             'boda': {'base': 50, 'per_km': 30},
+            'courier_bike': {'base': 60, 'per_km': 25},
+            'courier_car': {'base': 120, 'per_km': 40},
         }
         
-        rates = fare_rates.get(vehicle_type, fare_rates['standard'])
-        
-        # Apply surge pricing (7-9am, 5-7pm)
-        hour = datetime.now().hour
-        surge_multiplier = 1.2 if (7 <= hour <= 9) or (17 <= hour <= 19) else 1
-        
-        
-        base_fare = rates['base']
-        distance_charge = distance_km * rates['per_km']
-        subtotal = base_fare + distance_charge
-        surge_charge = subtotal * (surge_multiplier - 1) if surge_multiplier > 1 else 0
-        total_fare = round(subtotal * surge_multiplier)
-        
-        fare_breakdown = {
-            'base': base_fare,
-            'distance': round(distance_charge),
-            'surge': round(surge_charge),
-            'total': total_fare,
-            'surge_multiplier': surge_multiplier
-        }
-        
-    except (TypeError, ValueError) as e:
-        print(f"Fare calculation error: {e}")
-        total_fare = 100
-        distance_km = 0
-        duration_min = 0
-        fare_breakdown = {
-            'base': 100, 'distance': 0, 'surge': 0, 
-            'total': 100, 'surge_multiplier': 1
-        }
-    
-    
-    ride_data = {
-        'pickup_address': pickup_address,
-        'dropoff_address': dropoff_address,
-        'pickup_lat': pickup_lat,
-        'pickup_lng': pickup_lng,
-        'dropoff_lat': dropoff_lat,
-        'dropoff_lng': dropoff_lng,
-        'vehicle_type': vehicle_type,
-    }
-    
-    serializer = RideSerializer(data=ride_data)
-    if serializer.is_valid():
-        ride = serializer.save(
-            customer=request.user,
-            status='requested',
-            fare=total_fare  
-        )
-        
-       
-        from channels.layers import get_channel_layer
-        from asgiref.sync import async_to_sync
-        
-        channel_layer = get_channel_layer()
-        online_drivers = DriverLocation.objects.filter(is_online=True).select_related('driver')
-        print(f"🔍 [DEBUG] Online drivers: {online_drivers.count()}")
-        for driver_loc in online_drivers:
-            print(f"🔍 [DEBUG] Driver {driver_loc.driver.id} - Online: {driver_loc.is_online}")
+        all_fares = {}
+        for vehicle_key, rates in fare_rates.items():
+            # Apply surge pricing
+            hour = datetime.now().hour
+            surge_multiplier = 1.2 if (7 <= hour <= 9) or (17 <= hour <= 19) else 1
             
-            driver_to_pickup_distance = calculate_distance(
-                driver_loc.lat, driver_loc.lng,
-                pickup_lat, pickup_lng
-            )
+            # Base fare calculation
+            base_fare = rates['base']
+            distance_charge = distance_km * rates['per_km']
             
+            # Add courier service premium
+            service_premium = 0
+            if 'courier' in vehicle_key:
+                service_premium = base_fare * 0.3  # 30% premium for courier services
+            
+            subtotal = base_fare + distance_charge + service_premium
+            surge_charge = subtotal * (surge_multiplier - 1) if surge_multiplier > 1 else 0
+            total_fare = round(subtotal * surge_multiplier)
+            
+            all_fares[vehicle_key] = {
+                'base': base_fare,
+                'distance': round(distance_charge),
+                'service_premium': round(service_premium),
+                'surge': round(surge_charge),
+                'total': total_fare,
+                'surge_multiplier': surge_multiplier
+            }
         
-            if driver_to_pickup_distance <= 20:
-                print(f"[WebSocket] Sending to driver {driver_loc.driver.id}")
-                
-                async_to_sync(channel_layer.group_send)(
-                    f"driver_{driver_loc.driver.id}",
-                    {
-                        "type": "new_ride_request",
-                        "data": {
-                            'id': ride.id,
-                            'customer_name': f"{ride.customer.first_name} {ride.customer.last_name}",
-                            'customer_phone': ride.customer.phone_number,
-                            'pickup_address': ride.pickup_address,
-                            'dropoff_address': ride.dropoff_address,
-                            'fare': str(ride.fare),  
-                            'vehicle_type': ride.vehicle_type,
-                            'distance': f"{driver_to_pickup_distance:.1f} km",
-                            'estimated_pickup_time': f"{int(driver_to_pickup_distance * 3)} min",
-                            'created_at': ride.created_at.isoformat(),
-                            'fare_breakdown': fare_breakdown  
-                        }
-                    }
-                )
-        
-        response_data = RideSerializer(ride).data
-        response_data.update({
+        response_data = {
             'distance_km': round(distance_km, 2),
             'duration_min': round(duration_min, 2),
-            'fare_breakdown': fare_breakdown
-        })
+            'pickup_coords': pickup_coords,
+            'dropoff_coords': dropoff_coords,
+            'all_fares': all_fares,
+            'selected_fare': all_fares.get(vehicle_type, all_fares['economy'])
+        }
+        
         if route_info:
             response_data['route_polyline'] = route_info['polyline']
         
-        return Response(response_data, status=201)
-    
-    return Response(serializer.errors, status=400)
+        return Response(response_data)
+        
+    except (TypeError, ValueError) as e:
+        print(f"Route calculation error: {e}")
+        return Response({"error": "Could not calculate route and fare"}, status=400)
 
 @api_view(['POST'])
 def geocode_address_view(request):
@@ -407,6 +521,115 @@ def geocode_address_view(request):
                 "Check spelling"
             ]
         }, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def reverse_geocode(request):
+    """Convert coordinates to address using Google Maps API"""
+    lat = request.data.get('lat')
+    lng = request.data.get('lng')
+    
+    if not lat or not lng:
+        return Response({"error": "Latitude and longitude are required"}, status=400)
+    
+    try:
+        lat = float(lat)
+        lng = float(lng)
+    except (TypeError, ValueError):
+        return Response({"error": "Invalid coordinates"}, status=400)
+    
+    try:
+        base_url = 'https://maps.googleapis.com/maps/api/geocode/json'
+        params = {
+            'latlng': f'{lat},{lng}',
+            'key': settings.GOOGLE_API_KEY,
+        }
+        
+        response = requests.get(base_url, params=params, timeout=10)
+        data = response.json()
+        
+        print(f"Google Reverse Geocoding API Response: {data['status']}")
+        
+        if data['status'] == 'OK':
+            result = data['results'][0]
+            return Response({
+                'address': result['formatted_address'],
+                'display_name': result['formatted_address'],
+                'lat': lat,
+                'lng': lng
+            })
+        else:
+            print(f"Google Reverse Geocoding API error: {data['status']}")
+            # Return coordinates as fallback address
+            return Response({
+                'address': f'Current Location ({lat:.4f}, {lng:.4f})',
+                'display_name': f'Current Location ({lat:.4f}, {lng:.4f})',
+                'lat': lat,
+                'lng': lng
+            })
+            
+    except Exception as e:
+        print(f"Reverse geocoding error: {e}")
+        # Return coordinates as fallback
+        return Response({
+            'address': f'Current Location ({lat:.4f}, {lng:.4f})',
+            'display_name': f'Current Location ({lat:.4f}, {lng:.4f})',
+            'lat': lat,
+            'lng': lng
+        }) 
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def set_current_location(request):
+    """Set user's current location"""
+    lat = request.data.get('lat')
+    lng = request.data.get('lng')
+    address = request.data.get('address', '')
+    
+    if not lat or not lng:
+        return Response({"error": "Latitude and longitude are required"}, status=400)
+    
+    try:
+        lat = float(lat)
+        lng = float(lng)
+        
+        # Validate coordinates are within reasonable range for Kenya
+        if not (-4.9 <= lat <= 5.0) or not (33.9 <= lng <= 42.0):
+            return Response({"error": "Coordinates outside Kenya bounds"}, status=400)
+            
+    except (TypeError, ValueError):
+        return Response({"error": "Invalid coordinates"}, status=400)
+    
+    # Store in session or user profile
+    request.session['current_location'] = {
+        'lat': lat,
+        'lng': lng,
+        'address': address,
+        'timestamp': timezone.now().isoformat()
+    }
+    
+    # If user is a driver, update their location
+    if request.user.user_type in ['driver', 'boda_rider']:
+        DriverLocation.objects.update_or_create(
+            driver=request.user,
+            defaults={
+                'lat': lat,
+                'lng': lng,
+                'is_online': True,
+                'last_updated': timezone.now()
+            }
+        )
+    
+    return Response({
+        "message": "Location updated successfully",
+        "location": {
+            "lat": lat,
+            "lng": lng,
+            "address": address
+        }
+    })           
 
 @api_view(['GET'])
 def get_nearby_drivers(request):
@@ -516,7 +739,7 @@ def accept_ride(request, ride_id):
                     'driver_id': request.user.id,
                     'driver_name': f"{request.user.first_name} {request.user.last_name}",
                     'driver_phone': request.user.phone_number,
-                    'vehicle_type': getattr(request.user, 'vehicle_type', 'Standard'),
+                    'vehicle_type': getattr(request.user, 'vehicle_type', 'Economy'),
                     'license_plate': getattr(getattr(request.user, 'vehicle', None), 'license_plate', ''),
                     'timestamp': timezone.now().isoformat()
                 }
@@ -2696,4 +2919,47 @@ def get_approved_drivers(request):
         return Response(drivers_data)
         
     except Exception as e:
-        return Response({"error": f"Failed to fetch approved drivers: {str(e)}"}, status=500)          
+        return Response({"error": f"Failed to fetch approved drivers: {str(e)}"}, status=500)  
+
+        
+@api_view(['GET'])
+@permission_classes([permissions.IsAdminUser])
+def download_driver_document(request, user_id, document_type):
+    """Download driver document file"""
+    try:
+        driver = User.objects.get(
+            id=user_id,
+            user_type__in=['driver', 'boda_rider']
+        )
+        
+        
+        file_field = None
+        if document_type == 'driver_license':
+            file_field = driver.driver_license_file
+        elif document_type == 'national_id':
+            file_field = driver.national_id_file
+        elif document_type == 'logbook':
+            file_field = driver.logbook_file
+        else:
+            return Response({"error": "Invalid document type"}, status=400)
+        
+        if not file_field:
+            return Response({"error": "Document not found"}, status=404)
+        
+        
+        import requests
+        file_response = requests.get(file_field.url)
+       
+        from django.http import HttpResponse
+        response = HttpResponse(
+            file_response.content,
+            content_type='application/octet-stream'
+        )
+        response['Content-Disposition'] = f'attachment; filename="{file_field.name.split("/")[-1]}"'
+        
+        return response
+        
+    except User.DoesNotExist:
+        return Response({"error": "Driver not found"}, status=404)
+    except Exception as e:
+        return Response({"error": f"Download failed: {str(e)}"}, status=500)

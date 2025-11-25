@@ -170,6 +170,9 @@ class RideSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source='customer.get_full_name', read_only=True)
     driver_name = serializers.CharField(source='driver.get_full_name', read_only=True)
     customer_phone = serializers.CharField(source='customer.phone_number', read_only=True)
+
+    service_type = serializers.CharField(required=False)
+    vehicle_type = serializers.CharField(required=False)
     
     class Meta:
         model = Ride
@@ -177,7 +180,10 @@ class RideSerializer(serializers.ModelSerializer):
             'id', 'customer', 'customer_name', 'customer_phone',
             'driver', 'driver_name', 'pickup_lat', 'pickup_lng',
             'dropoff_lat', 'dropoff_lng', 'pickup_address', 
-            'dropoff_address', 'status', 'fare', 'created_at'
+            'dropoff_address', 'status', 'fare', 'created_at',
+            'service_type', 'package_description', 'package_size',
+            'recipient_name', 'recipient_phone', 'delivery_instructions',
+            'vehicle_type', 'distance_km', 'duration_minutes'
         )
         read_only_fields = ('id', 'customer', 'driver', 'created_at')
 

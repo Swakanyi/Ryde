@@ -141,9 +141,9 @@ const Homepage = () => {
             Get Started Now
           </button>
         </Link>
-        <button className="px-8 py-4 bg-transparent border-2 border-white/30 text-white rounded-full font-bold text-lg hover:border-white hover:bg-white/10 transition-all duration-300">
+        {/* <button className="px-8 py-4 bg-transparent border-2 border-white/30 text-white rounded-full font-bold text-lg hover:border-white hover:bg-white/10 transition-all duration-300">
           Learn More
-        </button>
+        </button> */}
       </div>
 
      
@@ -491,7 +491,7 @@ const Homepage = () => {
               <div className="absolute -top-2 -right-2 w-8 h-8 bg-green-400 rounded-full animate-ping animation-delay-2000"></div>
             </div>
             <h3 className="text-2xl font-bold mb-3">Choose Your Ride</h3>
-            <p className="text-gray-700 text-lg">Select from Standard, Boda, or Premium options</p>
+            <p className="text-gray-700 text-lg">Select from Economy, Boda or Premium options</p>
           </div>
 
           <div className="text-center">

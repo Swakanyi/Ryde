@@ -1,14 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef} from 'react';
 import { 
-  Car, Search, Filter, MapPin, Clock, DollarSign, 
-  User, Navigation, Calendar, MoreVertical
+  Car, Search, Filter, MapPin, Clock, DollarSign, Trash2,
+  User, Navigation, Calendar, MoreVertical, Eye, MessageCircle
 } from 'lucide-react';
 import AdminService from '../../services/adminService';
+import RideDetailsModal from './RideDetailsModal';
+import ChatHistoryModal from './ChatHistoryModal';
+import { Menu, MenuButton, MenuItems, MenuItem } from '@headlessui/react';
 
 const RideManagement = () => {
   const [rides, setRides] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [menuOpen, setMenuOpen] = useState(null);
+const [selectedRide, setSelectedRide] = useState(null);
+const [showDetailsModal, setShowDetailsModal] = useState(false);
+const [showChatModal, setShowChatModal] = useState(false);
+const [deleting, setDeleting] = useState(false);
+const menuRef = useRef(null);
   const [filters, setFilters] = useState({
     status: '',
     vehicle_type: '',
@@ -31,6 +40,16 @@ const RideManagement = () => {
     fetchRides();
   }, [filters]);
 
+  useEffect(() => {
+  const handleClickOutside = (event) => {
+    if (menuRef.current && !menuRef.current.contains(event.target)) {
+      setMenuOpen(null);
+    }
+  };
+  document.addEventListener('mousedown', handleClickOutside);
+  return () => document.removeEventListener('mousedown', handleClickOutside);
+}, []);
+
   const getStatusBadge = (status) => {
     const statusConfig = {
       requested: { color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30', label: 'Requested' },
@@ -48,6 +67,49 @@ const RideManagement = () => {
       </span>
     );
   };
+
+const handleMenuToggle = (rideId, event) => {
+  event.stopPropagation();
+  console.log('Setting menuOpen to:', rideId, 'current:', menuOpen);
+  setMenuOpen(prev => prev === rideId ? null : rideId);
+};
+
+useEffect(() => {
+  console.log('menuOpen state changed to:', menuOpen);
+}, [menuOpen]);
+
+
+const handleViewDetails = (ride) => {
+  console.log('View Details clicked for ride:', ride);
+  setMenuOpen(null);
+  setSelectedRide(ride);
+  setShowDetailsModal(true);
+};
+
+const handleViewChat = (ride) => {
+  console.log('View Chat clicked for ride:', ride);
+  setMenuOpen(null);
+  setSelectedRide(ride);
+  setShowChatModal(true);
+};
+
+const handleDelete = async (ride) => {
+  console.log('Delete clicked for ride:', ride);
+  if (!window.confirm(`Are you sure you want to delete Ride #${ride.id}? This action cannot be undone.`)) {
+    return;
+  }
+
+  try {
+    setDeleting(true);
+    await AdminService.deleteRide(ride.id);
+    await fetchRides();
+    setMenuOpen(null);
+  } catch (err) {
+    setError(err.error || 'Failed to delete ride');
+  } finally {
+    setDeleting(false);
+  }
+};
 
   const getVehicleIcon = (vehicleType) => {
     const icons = {
@@ -156,9 +218,9 @@ const RideManagement = () => {
           >
             <option value="">All Vehicles</option>
             <option value="economy" className="text-black">Economy</option>
-            <option value="comfort" className="text-black">Comfort</option>
+    
             <option value="premium" className="text-black">Premium</option>
-            <option value="xl" className="text-black">XL</option>
+            
             <option value="boda" className="text-black">Boda</option>
           </select>
 
@@ -205,9 +267,15 @@ const RideManagement = () => {
                 </div>
               </div>
 
-              <button className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
-                <MoreVertical className="w-4 h-4" />
-              </button>
+  <div className="relative">
+  <button 
+    onClick={() => handleViewDetails(ride)}
+    className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-colors flex items-center gap-2"
+  >
+    
+    <span className="text-sm">View Details</span>
+  </button>
+</div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -245,6 +313,38 @@ const RideManagement = () => {
           </div>
         )}
       </div>
+
+{showDetailsModal && selectedRide && (
+  (console.log('🔄 [RideManagement] Rendering RideDetailsModal:', { 
+    showDetailsModal, 
+    selectedRide: selectedRide.id,
+    rideData: selectedRide 
+  }),
+  <RideDetailsModal 
+    ride={selectedRide} 
+    onClose={() => {
+      console.log('❌ [RideManagement] Closing details modal');
+      setShowDetailsModal(false);
+      setSelectedRide(null);
+    }} 
+  />)
+)}
+
+{showChatModal && selectedRide && (
+  (console.log('🔄 [RideManagement] Rendering ChatHistoryModal:', { 
+    showChatModal, 
+    selectedRide: selectedRide.id 
+  }),
+  <ChatHistoryModal 
+    ride={selectedRide} 
+    onClose={() => {
+      console.log('❌ [RideManagement] Closing chat modal');
+      setShowChatModal(false);
+      setSelectedRide(null);
+    }} 
+  />)
+)}
+
     </div>
   );
 };

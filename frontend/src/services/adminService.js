@@ -16,7 +16,6 @@ class AdminService {
     }
   }
 
-  
   async getUsers(params = {}) {
     try {
       const response = await axios.get(`${API_URL}/admin/users/`, {
@@ -74,7 +73,29 @@ class AdminService {
     }
   }
 
+  async deleteRide(rideId) {
+    try {
+      const response = await axios.post(`${API_URL}/admin/rides/${rideId}/delete/`, {}, {
+        headers: AuthService.getAuthHeader()
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error;
+    }
+  }
+
  
+  async getRideChat(rideId) {
+    try {
+      const response = await axios.get(`${API_URL}/admin/rides/${rideId}/chat/`, {
+        headers: AuthService.getAuthHeader()
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || error;
+    }
+  }
+
   async getPendingDrivers() {
     try {
       const response = await axios.get(`${API_URL}/admin/drivers/pending/`, {
@@ -86,7 +107,6 @@ class AdminService {
     }
   }
 
-  
   async getPendingDriversWithDocuments() {
     try {
       const response = await axios.get(`${API_URL}/admin/drivers/pending-with-documents/`, {
@@ -98,7 +118,6 @@ class AdminService {
     }
   }
 
- 
   async getDriverDocuments(driverId) {
     try {
       const response = await axios.get(`${API_URL}/admin/drivers/${driverId}/documents/`, {
@@ -111,6 +130,63 @@ class AdminService {
   }
 
   
+async downloadDriverDocument(driverId, documentType) {
+  try {
+    const response = await axios.get(
+      `${API_URL}/admin/drivers/${driverId}/documents/${documentType}/download/`, 
+      {
+        headers: AuthService.getAuthHeader(),
+        responseType: 'blob' 
+      }
+    );
+
+   
+    const blob = new Blob([response.data]);
+    const url = window.URL.createObjectURL(blob);
+    
+    
+    const filename = `${documentType}_${driverId}.jpg`;
+    
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    return { success: true, filename };
+  } catch (error) {
+    console.error('Download error:', error);
+    
+    
+    try {
+      
+      const urlResponse = await axios.get(
+        `${API_URL}/admin/drivers/${driverId}/documents/${documentType}/url/`, 
+        {
+          headers: AuthService.getAuthHeader()
+        }
+      );
+      
+      const { file_url } = urlResponse.data;
+      
+     
+      const link = document.createElement('a');
+      link.href = file_url;
+      link.download = `${documentType}_${driverId}.jpg`;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+    } catch (fallbackError) {
+      throw new Error('Download failed');
+    }
+  }
+}
+
   async approveDriverWithVehicle(driverId, approvalData) {
     try {
       const response = await axios.post(`${API_URL}/admin/drivers/${driverId}/approve-with-vehicle/`, approvalData, {
@@ -122,7 +198,6 @@ class AdminService {
     }
   }
 
-  
   async getApprovedDrivers() {
     try {
       const response = await axios.get(`${API_URL}/admin/drivers/approved/`, {
@@ -156,7 +231,6 @@ class AdminService {
     }
   }
 
-  
   async getEmergencyRequests(params = {}) {
     try {
       const response = await axios.get(`${API_URL}/admin/emergency-requests/`, {
@@ -169,7 +243,6 @@ class AdminService {
     }
   }
 
- 
   async getEarningsReport(period = 'week') {
     try {
       const response = await axios.get(`${API_URL}/admin/reports/earnings/?period=${period}`, {
@@ -192,7 +265,6 @@ class AdminService {
     }
   }
 
- 
   async getNotifications(params = {}) {
     try {
       const response = await axios.get(`${API_URL}/admin/notifications/`, {
@@ -261,53 +333,29 @@ class AdminService {
     }
   }
 
-  async approveDriver(userId) {
-    try {
-      const response = await axios.post(`${API_URL}/admin/drivers/${userId}/approve/`, {}, {
-        headers: AuthService.getAuthHeader()
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Approve driver error:', error.response?.data || error);
-      throw error.response?.data || error;
-    }
-  }
-
-  async rejectDriver(userId, rejectionData) {
-    try {
-      const response = await axios.post(`${API_URL}/admin/drivers/${userId}/reject/`, rejectionData, {
-        headers: AuthService.getAuthHeader()
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Reject driver error:', error.response?.data || error);
-      throw error.response?.data || error;
-    }
-  }
-
   async deleteUser(userId) {
-  try {
-    const response = await axios.delete(`${API_URL}/admin/users/${userId}/`, {
-      headers: AuthService.getAuthHeader()
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Delete user error:', error.response?.data || error);
-    throw error.response?.data || error;
+    try {
+      const response = await axios.delete(`${API_URL}/admin/users/${userId}/`, {
+        headers: AuthService.getAuthHeader()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Delete user error:', error.response?.data || error);
+      throw error.response?.data || error;
+    }
   }
-}
 
   async updateUser(userId, userData) {
-  try {
-    const response = await axios.put(`${API_URL}/admin/users/${userId}/`, userData, {
-      headers: AuthService.getAuthHeader()
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Update user error:', error.response?.data || error);
-    throw error.response?.data || error;
+    try {
+      const response = await axios.put(`${API_URL}/admin/users/${userId}/`, userData, {
+        headers: AuthService.getAuthHeader()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Update user error:', error.response?.data || error);
+      throw error.response?.data || error;
+    }
   }
-}
 }
 
 export default new AdminService();
