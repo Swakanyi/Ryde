@@ -1,8 +1,9 @@
 import axios from 'axios';
 import AuthService from './auth';
+import config from '../config';
 
 
-const API_URL = 'http://localhost:8000/api/auth'; 
+const API_URL = `${config.API_URL}/auth`;
 class RideService {
   
  
