@@ -1,3 +1,5 @@
+import config from '../config';
+
 class WebSocketService {
   constructor() {
     this.socket = null;
@@ -122,7 +124,7 @@ handleMessage(message) {
       this.manualDisconnect = false;
       this.isConnecting = true;
 
-      const wsUrl = `ws://localhost:8000/ws/${userType}/${id}/?token=${encodeURIComponent(token)}`;
+     const wsUrl = `${config.WS_URL}/ws/${userType}/${id}/?token=${encodeURIComponent(token)}`;
 
       console.log(`🟡 [WebSocket] Connecting to: ${wsUrl}`);
       this.socket = new WebSocket(wsUrl);
