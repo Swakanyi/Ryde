@@ -73,20 +73,13 @@ const Documents = ({ driver, onClose, onApprove }) => {
 
 const downloadDocument = async (documentType, documentUrl, filename) => {
   try {
-    const link = document.createElement('a');
-    link.href = documentUrl;
-    
-   
-    const betterFilename = `${driver.first_name}_${driver.last_name}_${documentType}.jpg`;
-    link.download = betterFilename;
-    
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
+    setDownloadLoading(prev => ({ ...prev, [documentType]: true }));
+    await AdminService.downloadDriverDocument(driver.id, documentType);
   } catch (error) {
     console.error('Download failed:', error);
     window.open(documentUrl, '_blank');
+  } finally {
+    setDownloadLoading(prev => ({ ...prev, [documentType]: false }));
   }
 };
 

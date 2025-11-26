@@ -163,38 +163,38 @@ const ReportTable = ({ title, data, columns, loading, onViewDetails }) => {
   );
 };
 
-const RealTimeIndicator = ({ isRealTime, connectionStatus, lastUpdated, onToggleRealTime }) => (
-  <div className="flex items-center gap-3">
-    <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
-      connectionStatus === 'connected' 
-        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-        : 'bg-red-500/20 text-red-400 border border-red-500/30'
-    }`}>
-      {connectionStatus === 'connected' ? (
-        <Wifi className="w-4 h-4" />
-      ) : (
-        <WifiOff className="w-4 h-4" />
-      )}
-      {connectionStatus === 'connected' ? 'Live' : 'Disconnected'}
-    </div>
+// const RealTimeIndicator = ({ isRealTime, connectionStatus, lastUpdated, onToggleRealTime }) => (
+//   <div className="flex items-center gap-3">
+//     <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
+//       connectionStatus === 'connected' 
+//         ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+//         : 'bg-red-500/20 text-red-400 border border-red-500/30'
+//     }`}>
+//       {connectionStatus === 'connected' ? (
+//         <Wifi className="w-4 h-4" />
+//       ) : (
+//         <WifiOff className="w-4 h-4" />
+//       )}
+//       {connectionStatus === 'connected' ? 'Live' : 'Disconnected'}
+//     </div>
     
-    <div className="flex items-center gap-2 text-white/60 text-sm">
-      <Clock className="w-4 h-4" />
-      Updated: {lastUpdated.toLocaleTimeString()}
-    </div>
+//     <div className="flex items-center gap-2 text-white/60 text-sm">
+//       <Clock className="w-4 h-4" />
+//       Updated: {lastUpdated.toLocaleTimeString()}
+//     </div>
 
-    <button
-      onClick={onToggleRealTime}
-      className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm border transition-colors ${
-        isRealTime
-          ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-          : 'bg-white/10 text-white/60 border-white/20 hover:text-white/80'
-      }`}
-    >
-      {isRealTime ? 'Live' : 'Paused'}
-    </button>
-  </div>
-);
+//     <button
+//       onClick={onToggleRealTime}
+//       className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm border transition-colors ${
+//         isRealTime
+//           ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+//           : 'bg-white/10 text-white/60 border-white/20 hover:text-white/80'
+//       }`}
+//     >
+//       {isRealTime ? 'Live' : 'Paused'}
+//     </button>
+//   </div>
+// );
 
 const Reports = () => {
   const [activeReport, setActiveReport] = useState('earnings');
@@ -282,29 +282,29 @@ const Reports = () => {
     {
       title: 'Total Revenue',
       value: `Ksh${(earningsData?.summary?.total_earnings || earningsData?.total_earnings || 0).toLocaleString()}`,
-      change: 15.2,
-      icon: DollarSign,
+      // change: 15.2,
+      
       color: 'emerald'
     },
     {
       title: 'Total Rides',
       value: (earningsData?.summary?.total_rides || earningsData?.total_rides || 0).toLocaleString(),
-      change: 8.3,
-      icon: Car,
+      // change: 8.3,
+      
       color: 'blue'
     },
     {
       title: 'Average Fare',
       value: `Ksh${Math.round(earningsData?.summary?.average_fare || earningsData?.avg_fare || 0).toLocaleString()}`,
-      change: 5.1,
-      icon: TrendingUp,
+      // change: 5.1,
+     
       color: 'purple'
     },
     {
       title: 'Active Drivers',
       value: (usageData?.performance_metrics?.active_drivers || usageData?.active_drivers || 0).toLocaleString(),
-      change: 3.7,
-      icon: Users,
+      // change: 3.7,
+      
       color: 'amber'
     },
   ];
@@ -497,16 +497,16 @@ const Reports = () => {
         <StatCard
           title="Total Users"
           value={(usageData?.user_metrics?.total_users || usageData?.total_users || 12487).toLocaleString()}
-          change={12.5}
-          icon={Users}
+          // change={12.5}
+          
           color="blue"
           loading={loading}
         />
         <StatCard
           title="Ride Completion"
           value={`${Math.round(usageData?.ride_metrics?.completion_rate || usageData?.completion_rate || 85)}%`}
-          change={3.2}
-          icon={Car}
+          // change={3.2}
+          
           color="emerald"
           loading={loading}
         />
@@ -514,8 +514,8 @@ const Reports = () => {
         <StatCard
           title="Popular Routes"
           value={(usageData?.popular_routes?.length || 156).toLocaleString()}
-          change={5.7}
-          icon={MapPin}
+          // change={5.7}
+          
           color="purple"
           loading={loading}
         />
@@ -594,12 +594,12 @@ const Reports = () => {
         <div>
           <div className="flex items-center gap-3 mb-2">
             <h1 className="text-2xl font-bold text-white">Analytics & Reports</h1>
-            <RealTimeIndicator 
+            {/* <RealTimeIndicator 
               isRealTime={isRealTime}
               connectionStatus={connectionStatus}
               lastUpdated={lastUpdated}
               onToggleRealTime={handleToggleRealTime}
-            />
+            /> */}
           </div>
           <p className="text-white/60">
             {isRealTime ? 'Live platform analytics and insights' : 'Static report data'}

@@ -3055,17 +3055,26 @@ def download_driver_document(request, user_id, document_type):
             return Response({"error": "Document not found"}, status=404)
         
         
-        import requests
-        file_response = requests.get(file_field.url)
-       
-        from django.http import HttpResponse
-        response = HttpResponse(
-            file_response.content,
-            content_type='application/octet-stream'
-        )
-        response['Content-Disposition'] = f'attachment; filename="{file_field.name.split("/")[-1]}"'
+        original_filename = file_field.name.split('/')[-1] 
+        file_extension = '.' + original_filename.split('.')[-1] if '.' in original_filename else ''
+        filename = f"{driver.first_name}_{driver.last_name}_{document_type}{file_extension}"
         
-        return response
+        
+        cloudinary_url = file_field.url
+        
+        
+        if 'cloudinary.com' in cloudinary_url:
+            
+            if '?' in cloudinary_url:
+                cloudinary_url += '&fl_attachment'
+            else:
+                cloudinary_url += '?fl_attachment'
+        
+        
+        return Response({
+            "download_url": cloudinary_url,
+            "filename": filename
+        })
         
     except User.DoesNotExist:
         return Response({"error": "Driver not found"}, status=404)

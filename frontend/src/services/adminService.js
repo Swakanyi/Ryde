@@ -136,55 +136,24 @@ async downloadDriverDocument(driverId, documentType) {
     const response = await axios.get(
       `${API_URL}/admin/drivers/${driverId}/documents/${documentType}/download/`, 
       {
-        headers: AuthService.getAuthHeader(),
-        responseType: 'blob' 
+        headers: AuthService.getAuthHeader()
       }
     );
 
-   
-    const blob = new Blob([response.data]);
-    const url = window.URL.createObjectURL(blob);
-    
-    
-    const filename = `${documentType}_${driverId}.jpg`;
-    
+    const { download_url, filename } = response.data;
     
     const link = document.createElement('a');
-    link.href = url;
+    link.href = download_url;
     link.download = filename;
+    link.target = '_blank';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
 
     return { success: true, filename };
   } catch (error) {
     console.error('Download error:', error);
-    
-    
-    try {
-      
-      const urlResponse = await axios.get(
-        `${API_URL}/admin/drivers/${driverId}/documents/${documentType}/url/`, 
-        {
-          headers: AuthService.getAuthHeader()
-        }
-      );
-      
-      const { file_url } = urlResponse.data;
-      
-     
-      const link = document.createElement('a');
-      link.href = file_url;
-      link.download = `${documentType}_${driverId}.jpg`;
-      link.target = '_blank';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-    } catch (fallbackError) {
-      throw new Error('Download failed');
-    }
+    throw new Error('Download failed');
   }
 }
 
