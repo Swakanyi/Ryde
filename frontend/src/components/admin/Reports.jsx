@@ -62,7 +62,7 @@ const ChartContainer = ({ title, children, loading }) => {
     return (
       <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20 animate-pulse">
         <div className="h-6 bg-white/20 rounded w-1/3 mb-4"></div>
-        <div className="h-48 bg-white/20 rounded"></div>
+        <div className="h-64 bg-white/20 rounded"></div> 
       </div>
     );
   }
@@ -74,7 +74,10 @@ const ChartContainer = ({ title, children, loading }) => {
         {title}
       </h3>
       
-      {children}
+      
+      <div className="h-64 w-full">
+        {children}
+      </div>
     </div>
   );
 };
@@ -123,7 +126,7 @@ const ReportTable = ({ title, data, columns, loading, onViewDetails }) => {
                   {column.label}
                 </th>
               ))}
-              <th className="text-left p-4 text-white/60 font-medium">Actions</th>
+              {/* <th className="text-left p-4 text-white/60 font-medium">Actions</th> */}
             </tr>
           </thead>
           <tbody>
@@ -134,7 +137,7 @@ const ReportTable = ({ title, data, columns, loading, onViewDetails }) => {
                     {column.render ? column.render(item) : item[column.key]}
                   </td>
                 ))}
-                <td className="p-4">
+                {/* <td className="p-4">
                   <button
                     onClick={() => onViewDetails(item)}
                     className="flex items-center gap-2 px-3 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg hover:bg-emerald-500/30 transition-colors"
@@ -142,7 +145,7 @@ const ReportTable = ({ title, data, columns, loading, onViewDetails }) => {
                     <Eye className="w-4 h-4" />
                     View
                   </button>
-                </td>
+                </td> */}
               </tr>
             ))}
           </tbody>

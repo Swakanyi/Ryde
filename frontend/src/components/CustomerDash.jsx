@@ -1318,47 +1318,103 @@ const handleSavePersonalInfo = async () => {
   try {
     setLoading(true);
     
-   
-    const profileData = {
-      first_name: editPersonalInfo.firstName,
-      last_name: editPersonalInfo.lastName,
-      email: editPersonalInfo.email,
-      phone_number: editPersonalInfo.phone
-    };
+    // Validate required fields
+    if (!editPersonalInfo.firstName.trim()) {
+      addNotification({
+        type: 'error',
+        title: 'Validation Error',
+        message: 'First name is required',
+        data: { field: 'firstName' }
+      });
+      return;
+    }
+
+    if (!editPersonalInfo.email.trim()) {
+      addNotification({
+        type: 'error',
+        title: 'Validation Error',
+        message: 'Email is required',
+        data: { field: 'email' }
+      });
+      return;
+    }
 
     
-    const updatedUser = await UserService.updateProfile(profileData);
+    const profileData = {
+      first_name: editPersonalInfo.firstName.trim(),
+      last_name: editPersonalInfo.lastName.trim(),
+      email: editPersonalInfo.email.trim(),
+      phone_number: editPersonalInfo.phone.trim()
+    };
 
-   
+    console.log('🟡 [Profile] Attempting to update profile:', profileData);
+
+    const response = await UserService.updateProfile(profileData);
+    
+    console.log('✅ [Profile] Update response:', response);
+    
+    
+    let userData;
+    if (response.user) {
+      
+      userData = response.user;
+    } else if (response.first_name) {
+     
+      userData = response;
+    } else {
+      
+      userData = profileData;
+    }
+    
     const updatedProfile = {
-      firstName: updatedUser.user?.first_name || editPersonalInfo.firstName,
-      lastName: updatedUser.user?.last_name || editPersonalInfo.lastName,
-      email: updatedUser.user?.email || editPersonalInfo.email,
-      phone: updatedUser.user?.phone_number || editPersonalInfo.phone,
+      firstName: userData.first_name || editPersonalInfo.firstName,
+      lastName: userData.last_name || editPersonalInfo.lastName,
+      email: userData.email || editPersonalInfo.email,
+      phone: userData.phone_number || editPersonalInfo.phone,
       paymentMethod: personalInfo.paymentMethod 
     };
     
     setPersonalInfo(updatedProfile);
     
-    
-    UserService.updateSessionStorage(updatedUser.user || updatedUser);
+   
+    UserService.updateSessionStorage(userData);
     
     setIsEditingPersonalInfo(false);
     
-   
+    
     addNotification({
-      type: 'profile_updated',
+      type: 'success',
       title: 'Profile Updated',
-      message: 'Your personal information has been updated successfully',
+      message: response.message || 'Your profile has been updated successfully',
       data: { timestamp: new Date().toISOString() }
     });
     
+    console.log('✅ [Profile] Profile update completed successfully');
+    
   } catch (error) {
-    console.error('Error updating profile:', error);
+    console.error('❌ [Profile] Update error:', error);
+    
+    
+    let errorMessage = 'Failed to update profile. Please try again.';
+    
+    if (error.response) {
+      
+      const errorData = error.response.data;
+      if (errorData.error) {
+        errorMessage = errorData.error;
+      } else if (typeof errorData === 'string') {
+        errorMessage = errorData;
+      } else if (errorData.detail) {
+        errorMessage = errorData.detail;
+      }
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
     addNotification({
       type: 'error',
       title: 'Update Failed',
-      message: error.message || 'Failed to update profile. Please try again.',
+      message: errorMessage,
       data: { error: error.message }
     });
   } finally {
@@ -1567,7 +1623,7 @@ const handlePaymentMethodChange = (method) => {
 
 
 const savePaymentDetails = async () => {
- 
+  
   if (paymentDetails.method === 'mpesa' && !paymentDetails.mpesa_number) {
     addAlert({
       type: 'error',
@@ -1607,16 +1663,19 @@ const savePaymentDetails = async () => {
       })
     };
 
+    console.log('🟡 [Payment] Saving payment data:', paymentData);
     
     const updatedPayment = await UserService.updatePaymentMethod(paymentData);
 
-   
+    console.log('✅ [Payment] Payment update response:', updatedPayment);
+    
+    
     setPaymentDetails(prev => ({
       ...prev,
       ...updatedPayment
     }));
 
-    
+   
     const updatedPersonalInfo = {
       ...personalInfo,
       paymentMethod: paymentDetails.method
@@ -1634,27 +1693,22 @@ const savePaymentDetails = async () => {
       autoClose: true
     });
     
-    addNotification({
-      type: 'payment_updated',
-      title: 'Payment Method Updated',
-      message: `Your ${paymentDetails.method === 'mpesa' ? 'M-Pesa' : 'Visa'} payment method has been saved`,
-      data: { method: paymentDetails.method }
-    });
-    
   } catch (error) {
-    console.error('Error saving payment details:', error);
+    console.error('❌ [Payment] Error saving payment details:', error);
+    
+    let errorMessage = 'Failed to save payment method. Please try again.';
+    
+    if (error.response?.data?.error) {
+      errorMessage = error.response.data.error;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
     addAlert({
       type: 'error',
       title: 'Save Failed',
-      message: error.message || 'Failed to save payment method',
+      message: errorMessage,
       autoClose: true
-    });
-
-    addNotification({
-      type: 'error',
-      title: 'Save Failed',
-      message: error.message || 'Failed to save payment method',
-      data: { error: error.message }
     });
   } finally {
     setLoading(false);
@@ -2341,40 +2395,52 @@ const fareRates = {
 
 
   
-  const searchAddress = async (query, type) => {
-    if (query.length < 3) {
-      if (type === 'pickup') {
-        setPickupSuggestions([]);
-        setShowPickupSuggestions(false);
-      } else {
-        setDropoffSuggestions([]);
-        setShowDropoffSuggestions(false);
-      }
-      return;
+ const searchAddress = async (query, type) => {
+  console.log(`🔍 [Autocomplete] Searching for: "${query}" (${type})`);
+  
+  if (query.length < 3) {
+    if (type === 'pickup') {
+      setPickupSuggestions([]);
+      setShowPickupSuggestions(false);
+    } else {
+      setDropoffSuggestions([]);
+      setShowDropoffSuggestions(false);
+    }
+    return;
+  }
+
+  setIsLoadingSuggestions(true);
+  try {
+   
+    let locationData = {};
+    if (currentLocation) {
+      locationData = {
+        lat: currentLocation[0],
+        lng: currentLocation[1]
+      };
     }
 
-    setIsLoadingSuggestions(true);
-    try {
-      const suggestions = await RideService.autocompleteAddress(query);
-      
-      if (type === 'pickup') {
-        setPickupSuggestions(suggestions);
-        setShowPickupSuggestions(true);
-      } else {
-        setDropoffSuggestions(suggestions);
-        setShowDropoffSuggestions(true);
-      }
-    } catch (error) {
-      console.error('Autocomplete search error:', error);
-      if (type === 'pickup') {
-        setShowPickupSuggestions(false);
-      } else {
-        setShowDropoffSuggestions(false);
-      }
-    } finally {
-      setIsLoadingSuggestions(false);
+    const suggestions = await RideService.autocompleteAddress(query, locationData);
+    console.log(`✅ [Autocomplete] Got ${suggestions.length} results:`, suggestions);
+    
+    if (type === 'pickup') {
+      setPickupSuggestions(suggestions);
+      setShowPickupSuggestions(suggestions.length > 0);
+    } else {
+      setDropoffSuggestions(suggestions);
+      setShowDropoffSuggestions(suggestions.length > 0);
     }
-  };
+  } catch (error) {
+    console.error('❌ [Autocomplete] Search error:', error);
+    if (type === 'pickup') {
+      setShowPickupSuggestions(false);
+    } else {
+      setShowDropoffSuggestions(false);
+    }
+  } finally {
+    setIsLoadingSuggestions(false);
+  }
+};
 
   const handleAddressSelect = async (suggestion, type) => {
     try {
@@ -2473,6 +2539,17 @@ const calculateRoute = async () => {
   } finally {
     setLoading(false);
   }
+};
+
+const handleLogout = () => {
+  
+  sessionStorage.clear();
+  
+  setActiveRide(null);
+  setRideStatus(null);
+  setDriverInfo(null);
+ 
+  window.location.href = '/login';
 };
 
 
@@ -2979,6 +3056,15 @@ const {
                   {sessionStorage.getItem('customer_name') || sessionStorage.getItem('user_name') || 'Customer'}
                 </span>
               </div>
+
+              <button
+  onClick={handleLogout}
+  className="bg-red-500/20 hover:bg-red-500/30 text-red-300 hover:text-white px-4 py-2 rounded-xl border border-red-500/30 transition-colors flex items-center gap-2"
+  title="Logout"
+>
+  <span>Logout</span>
+</button>
+
             </div>
           </div>
 

@@ -266,7 +266,7 @@ def request_ride(request):
     
     serializer = RideSerializer(data=ride_data)
     if serializer.is_valid():
-        # Create the ride with estimated distance/duration
+        
         route_info = get_google_route(pickup_coords['lat'], pickup_coords['lng'], 
                                      dropoff_coords['lat'], dropoff_coords['lng'])
         
@@ -292,36 +292,92 @@ def request_ride(request):
         
         channel_layer = get_channel_layer()
         
-        # ✅ FIX 1: Get ALL approved drivers (not just online_drivers from DriverLocation)
+       
         approved_drivers = User.objects.filter(
-            user_type__in=['driver', 'boda_rider'],
-            approval_status='approved',
-            is_active=True
+           user_type__in=['driver', 'boda_rider'],
+           approval_status='approved',
+           is_active=True
         )
-        
+
         print(f"📊 [Request Ride] Total approved drivers: {approved_drivers.count()}")
-        
+
+
+        driver_locations = DriverLocation.objects.filter(driver__in=approved_drivers)
+        location_map = {loc.driver_id: loc for loc in driver_locations}
+
         notified_count = 0
         for driver in approved_drivers:
-            # ✅ FIX 2: Try to get driver location, default to Nairobi center if not available
-            try:
-                driver_loc = DriverLocation.objects.get(driver=driver)
+    
+            driver_loc = location_map.get(driver.id)
+    
+            if driver_loc:
                 driver_lat = driver_loc.lat
                 driver_lng = driver_loc.lng
                 is_online = driver_loc.is_online
-            except DriverLocation.DoesNotExist:
-                print(f"⚠️ [Request Ride] Driver {driver.id} has no location record")
-                # Default to Nairobi center if no location
-                driver_lat = -1.2921
-                driver_lng = 36.8219
-                is_online = False
-            
-            # ✅ FIX 3: Still check if online, but continue anyway
+            else:
+                print(f"⚠️ [Request Ride] Driver {driver.id} has no location record - using default")
+        
+                driver_lat = pickup_coords['lat']
+                driver_lng = pickup_coords['lng']
+                is_online = False  
+    
+    
             if not is_online:
-                print(f"⚠️ [Request Ride] Driver {driver.id} is offline")
-                # You can either skip offline drivers or notify them anyway
-                # For now, let's skip them but log it
-                continue
+                print(f"🔔 [Request Ride] Notifying OFFLINE driver {driver.id} for testing")
+        
+    
+    
+            driver_to_pickup_distance = calculate_distance(
+                driver_lat, driver_lng,
+                pickup_coords['lat'], pickup_coords['lng']
+            )
+    
+            print(f"📍 [Request Ride] Driver {driver.id} distance to pickup: {driver_to_pickup_distance}km")
+    
+   
+            MAX_DISTANCE_KM = 1000 
+    
+            if driver_to_pickup_distance <= MAX_DISTANCE_KM:
+                notification_data = {
+                    'id': ride.id,
+                    'ride_id': ride.id,
+                    'customer_name': f"{ride.customer.first_name} {ride.customer.last_name}",
+                    'customer_phone': ride.customer.phone_number,
+                    'pickup_address': ride.pickup_address,
+                    'dropoff_address': ride.dropoff_address,
+                    'fare': str(ride.fare),
+                    'vehicle_type': ride.vehicle_type,
+                    'service_type': ride.service_type,
+                    'distance': f"{driver_to_pickup_distance:.1f} km",
+                    'estimated_pickup_time': f"{int(driver_to_pickup_distance * 3)} min",
+                    'created_at': ride.created_at.isoformat(),
+                }
+        
+        
+                if ride.service_type != 'ride':
+                    notification_data.update({
+                        'package_description': ride.package_description,
+                        'package_size': ride.package_size,
+                        'recipient_name': ride.recipient_name,
+                        'is_courier': True
+                    })
+        
+                print(f"📢 [WebSocket] Sending new_ride_request to driver_{driver.id}")
+        
+                try:
+                    async_to_sync(channel_layer.group_send)(
+                        f"driver_{driver.id}",
+                        {
+                            "type": "new_ride_request",
+                            "data": notification_data
+                        }
+                    )
+                    notified_count += 1
+                    print(f"✅ [WebSocket] Notified driver {driver.id}")
+                except Exception as e:
+                    print(f"❌ [WebSocket] Failed to notify driver {driver.id}: {str(e)}")
+            else:
+                print(f"⏭️ [Request Ride] Driver {driver.id} too far ({driver_to_pickup_distance}km > {MAX_DISTANCE_KM}km)")
             
             # Calculate distance
             driver_to_pickup_distance = calculate_distance(
@@ -331,9 +387,8 @@ def request_ride(request):
             
             print(f"📍 [Request Ride] Driver {driver.id} distance to pickup: {driver_to_pickup_distance}km")
             
-            # ✅ FIX 4: Increase radius or remove distance filter during testing
-            # In production, you might want 15-20km, but for testing use a larger radius
-            MAX_DISTANCE_KM = 50  # Increased from 20km for testing
+           
+            MAX_DISTANCE_KM = 50  
             
             if driver_to_pickup_distance <= MAX_DISTANCE_KM:
                 notification_data = {
@@ -351,7 +406,7 @@ def request_ride(request):
                     'created_at': ride.created_at.isoformat(),
                 }
                 
-                # Add courier details for non-ride services
+              
                 if ride.service_type != 'ride':
                     notification_data.update({
                         'package_description': ride.package_description,
@@ -383,7 +438,7 @@ def request_ride(request):
         response_data.update({
             'distance_km': round(distance_km, 2),
             'duration_min': round(duration_min, 2),
-            'drivers_notified': notified_count,  # Include this in response
+            'drivers_notified': notified_count,  
         })
         if route_info:
             response_data['route_polyline'] = route_info['polyline']
@@ -465,7 +520,7 @@ def calculate_route(request):
             # Add courier service premium
             service_premium = 0
             if 'courier' in vehicle_key:
-                service_premium = base_fare * 0.3  # 30% premium for courier services
+                service_premium = base_fare * 0.3  
             
             subtotal = base_fare + distance_charge + service_premium
             surge_charge = subtotal * (surge_multiplier - 1) if surge_multiplier > 1 else 0
@@ -561,7 +616,7 @@ def reverse_geocode(request):
             })
         else:
             print(f"Google Reverse Geocoding API error: {data['status']}")
-            # Return coordinates as fallback address
+            
             return Response({
                 'address': f'Current Location ({lat:.4f}, {lng:.4f})',
                 'display_name': f'Current Location ({lat:.4f}, {lng:.4f})',
@@ -571,7 +626,7 @@ def reverse_geocode(request):
             
     except Exception as e:
         print(f"Reverse geocoding error: {e}")
-        # Return coordinates as fallback
+       
         return Response({
             'address': f'Current Location ({lat:.4f}, {lng:.4f})',
             'display_name': f'Current Location ({lat:.4f}, {lng:.4f})',
@@ -595,14 +650,14 @@ def set_current_location(request):
         lat = float(lat)
         lng = float(lng)
         
-        # Validate coordinates are within reasonable range for Kenya
+        
         if not (-4.9 <= lat <= 5.0) or not (33.9 <= lng <= 42.0):
             return Response({"error": "Coordinates outside Kenya bounds"}, status=400)
             
     except (TypeError, ValueError):
         return Response({"error": "Invalid coordinates"}, status=400)
     
-    # Store in session or user profile
+    
     request.session['current_location'] = {
         'lat': lat,
         'lng': lng,
@@ -610,7 +665,7 @@ def set_current_location(request):
         'timestamp': timezone.now().isoformat()
     }
     
-    # If user is a driver, update their location
+    
     if request.user.user_type in ['driver', 'boda_rider']:
         DriverLocation.objects.update_or_create(
             driver=request.user,
@@ -907,36 +962,87 @@ def test_google_api(request):
 @api_view(['POST'])
 @permission_classes([permissions.AllowAny])
 def autocomplete_address(request):
-    """Get address suggestions using Google Places Autocomplete"""
+    """Get address suggestions based on user's location or country-wide"""
     query = request.data.get('query', '')
+    user_lat = request.data.get('lat')
+    user_lng = request.data.get('lng')
+    
+    print(f"🔍 [Backend Autocomplete] Query: '{query}', User location: ({user_lat}, {user_lng})")
     
     if not query or len(query) < 3:
+        print("⏹️ [Backend Autocomplete] Query too short")
         return Response({"suggestions": []})
     
     try:
         base_url = 'https://maps.googleapis.com/maps/api/place/autocomplete/json'
+        
+       
         params = {
             'input': query,
             'key': settings.GOOGLE_API_KEY,
             'components': 'country:ke',
-            'types': 'geocode',
+            
+            'types': 'establishment,geocode',
         }
         
+       
+        if user_lat and user_lng:
+            try:
+               
+                lat = float(user_lat)
+                lng = float(user_lng)
+                params.update({
+                    'location': f'{lat},{lng}',
+                    'radius': 50000,  
+                })
+                print(f"📍 [Backend Autocomplete] Using user location: {lat}, {lng}")
+            except (TypeError, ValueError) as e:
+                print(f"⚠️ [Backend Autocomplete] Invalid user location: {e}")
+        
+        print(f"🔄 [Backend Autocomplete] Making API call with params: {params}")
+        
+       
         response = requests.get(base_url, params=params, timeout=10)
         data = response.json()
         
+        print(f"📡 [Backend Autocomplete] Google API Status: {data['status']}")
+        
+        if data['status'] != 'OK':
+            print(f"❌ [Backend Autocomplete] Google API Error: {data.get('error_message', 'No error message')}")
+            print(f"🔍 [Backend Autocomplete] Full error response: {data}")
+            
+           
+            if data['status'] == 'INVALID_REQUEST':
+                print("🔄 [Backend Autocomplete] Trying fallback without types parameter...")
+                fallback_params = params.copy()
+                fallback_params.pop('types', None)  
+                
+                fallback_response = requests.get(base_url, params=fallback_params, timeout=10)
+                fallback_data = fallback_response.json()
+                
+                print(f"📡 [Backend Autocomplete] Fallback API Status: {fallback_data['status']}")
+                data = fallback_data
+        
+        suggestions = []
         if data['status'] == 'OK':
-            suggestions = []
             for prediction in data['predictions']:
-                suggestions.append({
+                suggestion_data = {
                     'description': prediction['description'],
-                    'place_id': prediction['place_id']
-                })
-            return Response({"suggestions": suggestions})
-        else:
-            return Response({"suggestions": []})
+                    'place_id': prediction['place_id'],
+                    'main_text': prediction.get('structured_formatting', {}).get('main_text', ''),
+                    'secondary_text': prediction.get('structured_formatting', {}).get('secondary_text', ''),
+                    'types': prediction.get('types', [])
+                }
+                suggestions.append(suggestion_data)
+                print(f"📍 [Backend Autocomplete] Found: {prediction['description']}")
+        
+        print(f"✅ [Backend Autocomplete] Returning {len(suggestions)} suggestions")
+        return Response({"suggestions": suggestions[:15]})
             
     except Exception as e:
+        print(f"❌ [Backend Autocomplete] Exception: {str(e)}")
+        import traceback
+        print(f"🔍 [Backend Autocomplete] Traceback: {traceback.format_exc()}")
         return Response({"suggestions": []})
 
 @api_view(['POST'])
@@ -2272,6 +2378,7 @@ def admin_earnings_report(request):
         start_date = today - timedelta(days=7)
         end_date = today
     
+    # Get earnings data
     earnings_data = Ride.objects.filter(
         status='completed',
         created_at__date__range=[start_date, end_date]
@@ -2281,7 +2388,7 @@ def admin_earnings_report(request):
         avg_fare=Avg('fare')
     )
     
-    
+    # FIX: Update daily breakdown to use 'total_earnings' instead of 'earnings'
     daily_breakdown = []
     current_date = start_date
     while current_date <= end_date:
@@ -2289,19 +2396,19 @@ def admin_earnings_report(request):
             status='completed',
             created_at__date=current_date
         ).aggregate(
-            total=Sum('fare'),
-            rides=Count('id')
+            total_earnings=Sum('fare'),  # Changed from 'total' to 'total_earnings'
+            total_rides=Count('id')
         )
         
         daily_breakdown.append({
             'date': current_date.isoformat(),
-            'earnings': float(day_earnings['total'] or 0),
-            'rides': day_earnings['rides'] or 0,
+            'total_earnings': float(day_earnings['total_earnings'] or 0),  # Changed key
+            'total_rides': day_earnings['total_rides'] or 0,
         })
         
         current_date += timedelta(days=1)
     
-    
+    # Vehicle type breakdown
     by_vehicle_type = Ride.objects.filter(
         status='completed',
         created_at__date__range=[start_date, end_date]
@@ -2311,6 +2418,7 @@ def admin_earnings_report(request):
         avg_fare=Avg('fare')
     ).order_by('-total_earnings')
     
+    # Top drivers
     top_drivers = Ride.objects.filter(
         status='completed',
         created_at__date__range=[start_date, end_date],

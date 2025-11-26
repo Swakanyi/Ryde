@@ -4,7 +4,70 @@ import {
   AlertTriangle, UserCheck, Clock, Shield,
   BarChart3, MapPin, Calendar, User
 } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import AdminService from '../../services/adminService';
+
+const SimpleRevenueChart = ({ data, loading }) => {
+  if (loading) {
+    return (
+      <div className="h-48 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+          <p className="text-white/60 text-sm">Loading revenue data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data || data.length === 0) {
+    return (
+      <div className="h-48 flex flex-col items-center justify-center text-center">
+        <BarChart3 className="w-8 h-8 text-white/30 mb-2" />
+        <p className="text-white/60 text-sm">No revenue data available</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-48">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+          <XAxis 
+            dataKey="date" 
+            stroke="#9CA3AF"
+            fontSize={11}
+            tickLine={false}
+          />
+          <YAxis 
+            stroke="#9CA3AF"
+            fontSize={11}
+            tickLine={false}
+            tickFormatter={(value) => `Ksh${(value / 1000).toFixed(0)}k`}
+            width={45}
+          />
+          <Tooltip 
+            contentStyle={{ 
+              backgroundColor: '#1F2937', 
+              border: '1px solid #374151',
+              borderRadius: '8px',
+              color: 'white'
+            }}
+            formatter={(value) => [`Ksh${value.toLocaleString()}`, 'Revenue']}
+          />
+          <Line 
+            type="monotone" 
+            dataKey="revenue" 
+            stroke="#10B981" 
+            strokeWidth={2}
+            dot={{ fill: '#10B981', strokeWidth: 1, r: 3 }}
+            activeDot={{ r: 4, fill: '#059669' }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
 
 const StatCard = ({ title, value, change, icon: Icon, color = 'emerald', loading }) => {
   const colors = {
@@ -110,6 +173,8 @@ const DashboardView = ({ data }) => {
   const [dashboardData, setDashboardData] = useState(data);
   const [loading, setLoading] = useState(!data);
   const [timeRange, setTimeRange] = useState('week');
+  const [revenueData, setRevenueData] = useState([]);
+const [revenueLoading, setRevenueLoading] = useState(true);
 
   const fetchDashboardData = async () => {
     try {
@@ -128,6 +193,29 @@ const DashboardView = ({ data }) => {
       fetchDashboardData();
     }
   }, []);
+
+  const fetchRevenueData = async () => {
+  try {
+    setRevenueLoading(true);
+    const data = await AdminService.getEarningsReport(timeRange);
+    
+    if (data?.daily_breakdown) {
+      const transformedData = data.daily_breakdown.map(day => ({
+        date: new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        revenue: day.total_earnings || day.revenue || 0
+      }));
+      setRevenueData(transformedData);
+    }
+  } catch (error) {
+    console.error('Failed to fetch revenue data:', error);
+  } finally {
+    setRevenueLoading(false);
+  }
+};
+
+useEffect(() => {
+  fetchRevenueData();
+}, [timeRange]);
 
   const stats = dashboardData?.overview || {};
   const userStats = dashboardData?.users || {};
@@ -238,11 +326,18 @@ const DashboardView = ({ data }) => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         <div className="lg:col-span-2">
-          <ChartPlaceholder
-            title="Revenue Overview"
-            description="Revenue analytics will be displayed here"
-            loading={loading}
-          />
+         <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-6 border border-white/20">
+  <div className="flex items-center justify-between mb-4">
+    <div className="flex items-center gap-3">
+      <BarChart3 className="w-5 h-5 text-emerald-400" />
+      <h3 className="text-white font-semibold">Revenue Overview</h3>
+    </div>
+    <div className="text-sm text-white/60">
+      {timeRange.charAt(0).toUpperCase() + timeRange.slice(1)}
+    </div>
+  </div>
+  <SimpleRevenueChart data={revenueData} loading={revenueLoading} />
+</div>
         </div>
 
         

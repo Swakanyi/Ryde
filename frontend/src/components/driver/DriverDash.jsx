@@ -297,6 +297,46 @@ const PersistentNotificationBar = ({ currentNotification, onAcceptRide, onDeclin
   );
 };
 
+const SystemNotificationBar = ({ notification, onClose }) => {
+    if (!notification) return null;
+
+    return (
+        <div className="fixed top-20 right-4 left-4 md:left-auto md:right-4 md:w-96 z-50 animate-in slide-in-from-right duration-500">
+            <div className="bg-orange-500/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-orange-300/30 p-4">
+                <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 bg-orange-400 rounded-full flex items-center justify-center flex-shrink-0">
+                        <Car className="w-5 h-5 text-white" />
+                    </div>
+                    
+                    <div className="flex-1">
+                        <div className="flex justify-between items-start mb-2">
+                            <h4 className="font-semibold text-white text-sm">
+                                {notification.title}
+                            </h4>
+                            <button
+                                onClick={onClose}
+                                className="text-white/70 hover:text-white transition-colors"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        
+                        <p className="text-white/90 text-sm mb-2">
+                            {notification.message}
+                        </p>
+                        
+                        {notification.data?.ride_id && (
+                            <p className="text-white/70 text-xs">
+                                Ride ID: #{notification.data.ride_id}
+                            </p>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 
 const DriverChatModal = ({ 
     showChat, 
@@ -424,6 +464,8 @@ const DriverDash = () => {
     const dashboardDataRef = useRef(null);
     const [pendingRides, setPendingRides] = useState([]);
     const [loadingPendingRides, setLoadingPendingRides] = useState(false);
+     const [systemNotifications, setSystemNotifications] = useState([]);
+    const [showSystemNotification, setShowSystemNotification] = useState(false);
 
     useEffect(() => { dashboardDataRef.current = dashboardData; }, [dashboardData]);
 
@@ -611,11 +653,62 @@ const handleChatMessage = (data) => {
         fetchDashboardData();
     };
 
-    const handleRideTaken = (data) => {
-        console.log('Ride taken by another driver', data);
+const handleRideTaken = (data) => {
+    console.log('🚫 [DriverDash] Ride taken by another driver:', data);
+    const takenRideId = data.ride_id;
+    
+    
+    setPendingRides(prev => prev.filter(ride => ride.id !== takenRideId));
+    
+    
+    setNotifications(prev => prev.filter(notif => {
         
+        if ((notif.type === 'ride_request' || notif.type === 'courier_request') && 
+            notif.data?.id === takenRideId) {
+            return false;
+        }
+        return true;
+    }));
+    
+    
+    setUnreadCount(prev => {
+        const removedNotifications = notifications.filter(notif => 
+            (notif.type === 'ride_request' || notif.type === 'courier_request') && 
+            notif.data?.id === takenRideId && 
+            !notif.read
+        );
+        return Math.max(0, prev - removedNotifications.length);
+    });
+    
+    
+    if (currentNotification?.data?.id === takenRideId) {
         setShowPersistentNotification(false);
+        setCurrentNotification(null);
+    }
+    
+    
+    const systemNotif = {
+        id: Date.now(),
+        type: 'ride_taken',
+        title: 'Ride Taken',
+        message: data.message || 'A ride was accepted by another driver',
+        data: data,
+        timestamp: new Date().toISOString()
     };
+    
+    setSystemNotifications(prev => [systemNotif, ...prev]);
+    setShowSystemNotification(true);
+    
+   
+    setTimeout(() => {
+        if (isMountedRef.current) {
+            setShowSystemNotification(false);
+            setSystemNotifications(prev => prev.filter(n => n.id !== systemNotif.id));
+        }
+    }, 10000);
+    
+    console.log(`✅ [DriverDash] Cleaned up ride ${takenRideId} from UI`);
+};
 
     const handleRideStatusUpdate = () => {
         console.log('🔄 Ride status updated - refreshing dashboard');
@@ -1140,12 +1233,23 @@ const fetchAvailableRides = async () => {
         let newStatus = '';
         try {
             if (action === 'arrived') { await DriverService.updateRideStatus(rideId, 'driver_arrived'); newStatus = 'driver_arrived'; }
-            if (action === 'start') { await DriverService.startRide(rideId); newStatus = 'in_progress'; }
+            if (action === 'start') { await DriverService.startRide(rideId); newStatus = 'Driving to Destination'; }
             if (action === 'complete') { await DriverService.completeRide(rideId); newStatus = 'completed'; }
             if (newStatus) websocketService.sendMessage('ride_status_update', { ride_id: rideId, status: newStatus, timestamp: new Date().toISOString() });
             fetchDashboardData();
         } catch (err) { console.error(err); }
     };
+
+    const handleLogout = () => {
+  
+  sessionStorage.clear();
+  
+  setActiveRide(null);
+  setRideStatus(null);
+  setDriverInfo(null);
+  
+  window.location.href = '/login';
+};
 
     
    const fetchDashboardData = async () => {
@@ -1337,6 +1441,16 @@ const fetchAvailableRides = async () => {
                                     {dashboardData?.user?.first_name} {dashboardData?.user?.last_name}
                                 </span>
                             </div>
+
+                            <button
+  onClick={handleLogout}
+  className="bg-red-500/20 hover:bg-red-500/30 text-red-300 hover:text-white px-4 py-2 rounded-xl border border-red-500/30 transition-colors flex items-center gap-2"
+  title="Logout"
+>
+  <span>Logout</span>
+</button>
+
+
                         </div>
                     </div>
 
@@ -1363,6 +1477,14 @@ const fetchAvailableRides = async () => {
                     </nav>
                 </div>
             </header>
+
+            {/* System Notification */}
+        {showSystemNotification && systemNotifications[0] && (
+            <SystemNotificationBar
+                notification={systemNotifications[0]}
+                onClose={() => setShowSystemNotification(false)}
+            />
+        )}
 
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 {activeTab === 'dashboard' && (
@@ -1572,7 +1694,7 @@ const DashboardView = ({ data, onStatusUpdate, onRideAction, currentLocation, no
                         Start Ride
                       </button>
                     )}
-                    {data.current_ride.status === 'in_progress' && (
+                    {data.current_ride.status === 'Driving to destination' && (
                       <button 
                         onClick={() => onRideAction(data.current_ride.id, 'complete')}
                         className="bg-green-500 text-white px-3 py-2 rounded-lg text-sm hover:bg-green-600 transition-colors"

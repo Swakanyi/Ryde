@@ -152,7 +152,7 @@ class Ride(models.Model):
         ('requested', 'Requested'),
         ('accepted', 'Accepted'),
         ('driver_arrived', 'Driver Arrived'),
-        ('in_progress', 'In Progress'),
+        ('in_progress', 'Driving to Destination'),
         ('completed', 'Completed'),
         ('cancelled', 'Cancelled'),
     ]
@@ -248,7 +248,7 @@ class EmergencyRequest(models.Model):
     STATUS_CHOICES = [
         ('requested', 'Requested'),
         ('accepted', 'Accepted'),
-        ('in_progress', 'In Progress'),
+        ('in_progress', 'Driving to Destination'),
         ('completed', 'Completed'),
         ('cancelled', 'Cancelled'),
     ]

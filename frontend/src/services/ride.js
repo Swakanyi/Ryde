@@ -169,17 +169,29 @@ class RideService {
     }
   }
 
-  async autocompleteAddress(query) {
-    try {
-      const response = await axios.post(`${API_URL}/autocomplete/`, { query }, {
-        headers: AuthService.getAuthHeader()
-      });
-      return response.data.suggestions;
-    } catch (error) {
-      console.error('Autocomplete error:', error);
-      return [];
+async autocompleteAddress(query, locationData = {}) {
+  try {
+    console.log('🔍 [Autocomplete] Sending query:', query, 'Location:', locationData);
+    
+    const requestData = { query };
+    
+    
+    if (locationData.lat && locationData.lng) {
+      requestData.lat = locationData.lat;
+      requestData.lng = locationData.lng;
     }
+    
+    const response = await axios.post(`${API_URL}/autocomplete-address/`, requestData, {
+      headers: AuthService.getAuthHeader()
+    });
+    
+    console.log('✅ [Autocomplete] Backend response:', response.data);
+    return response.data.suggestions || [];
+  } catch (error) {
+    console.error('❌ [Autocomplete] Error:', error.response?.data || error.message);
+    return [];
   }
+}
 
   async getPlaceDetails(placeId) {
     try {
