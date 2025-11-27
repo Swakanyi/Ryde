@@ -111,6 +111,8 @@ const handleDelete = async (ride) => {
   }
 };
 
+const completedRides = rides.filter(ride => ride.status === 'completed');
+
   const getVehicleIcon = (vehicleType) => {
     const icons = {
       economy: Car,
@@ -165,8 +167,8 @@ const handleDelete = async (ride) => {
             <div>
               <p className="text-white/60 text-sm">Total Revenue</p>
               <p className="text-white text-xl font-bold">
-                Ksh {rides.reduce((total, ride) => total + (parseFloat(ride.fare) || 0), 0).toLocaleString()}
-              </p>
+  Ksh {completedRides.reduce((total, ride) => total + (parseFloat(ride.fare) || 0), 0).toLocaleString()}
+</p>
             </div>
           </div>
         </div>
@@ -177,8 +179,8 @@ const handleDelete = async (ride) => {
             <div>
               <p className="text-white/60 text-sm">Avg. Fare</p>
               <p className="text-white text-xl font-bold">
-                Ksh {rides.length > 0 ? Math.round(rides.reduce((total, ride) => total + (parseFloat(ride.fare) || 0), 0) / rides.length) : 0}
-              </p>
+  Ksh {completedRides.length > 0 ? Math.round(completedRides.reduce((total, ride) => total + (parseFloat(ride.fare) || 0), 0) / completedRides.length) : 0}
+</p>
             </div>
           </div>
         </div>
