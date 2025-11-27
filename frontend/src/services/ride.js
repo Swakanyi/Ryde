@@ -4,6 +4,7 @@ import config from '../config';
 
 
 const API_URL = `${config.API_URL}/auth`;
+
 class RideService {
   
  

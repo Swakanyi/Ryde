@@ -17,7 +17,7 @@ urlpatterns = [
     path('rides/<int:ride_id>/status/', views.update_ride_status, name='update_ride_status'),
     path('rides/<int:ride_id>/', views.ride_detail, name='ride_detail'),
     path('rides/my-rides/', views.user_rides, name='user_rides'),
-    path('driver/location/', views.update_driver_location, name='update_driver_location'),
+    
     path('rides/calculate-route/', views.calculate_route, name='calculate_route'),
 
 #map 
