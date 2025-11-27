@@ -26,8 +26,8 @@ urlpatterns = [
     path('map/nearby-drivers/', views.get_nearby_drivers, name='nearby_drivers'),
     path('driver/location/', views.update_driver_location, name='update_driver_location'),
 #suggestions
-    path('autocomplete-address/', views.autocomplete_address, name='autocomplete_address'),
-    path('place-details/', views.get_place_details, name='get_place_details'),
+    path('auth/autocomplete-address/', views.autocomplete_address, name='autocomplete_address'),
+path('auth/place-details/', views.get_place_details, name='get_place_details'),
 
 #driver
     path('driver/dashboard/', views.driver_dashboard, name='driver_dashboard'),

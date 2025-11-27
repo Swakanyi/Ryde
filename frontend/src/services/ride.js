@@ -5,6 +5,7 @@ import config from '../config';
 
 const API_URL = `${config.API_URL}/auth`;
 
+
 class RideService {
   
  
@@ -271,6 +272,8 @@ async autocompleteAddress(query, locationData = {}) {
       return [];
     }
   }
+
+  
 }
 
 export default new RideService();
