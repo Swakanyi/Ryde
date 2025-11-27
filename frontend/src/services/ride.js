@@ -173,21 +173,25 @@ class RideService {
 
 async autocompleteAddress(query, locationData = {}) {
   try {
-    console.log('🔍 [Autocomplete] Sending query:', query, 'Location:', locationData);
+    console.log('🔍 [Autocomplete] Sending query:', query);
     
     const requestData = { query };
-    
     
     if (locationData.lat && locationData.lng) {
       requestData.lat = locationData.lat;
       requestData.lng = locationData.lng;
     }
     
+    // Use empty headers since endpoint doesn't require auth
     const response = await axios.post(`${API_URL}/autocomplete-address/`, requestData, {
-      headers: AuthService.getAuthHeader()
+      headers: {
+        'Content-Type': 'application/json'
+        // No Authorization header
+      },
+      timeout: 10000
     });
     
-    console.log('✅ [Autocomplete] Backend response:', response.data);
+    console.log('✅ [Autocomplete] Success, got', response.data.suggestions?.length, 'results');
     return response.data.suggestions || [];
   } catch (error) {
     console.error('❌ [Autocomplete] Error:', error.response?.data || error.message);
