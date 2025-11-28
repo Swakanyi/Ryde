@@ -152,7 +152,7 @@ class Ride(models.Model):
         ('requested', 'Requested'),
         ('accepted', 'Accepted'),
         ('driver_arrived', 'Driver Arrived'),
-        ('in_progress', 'Driving to Destination'),
+        ('driving_to_destination', 'Driving to Destination'),
         ('completed', 'Completed'),
         ('cancelled', 'Cancelled'),
     ]
@@ -206,7 +206,7 @@ class Ride(models.Model):
     dropoff_lng = models.FloatField()
     pickup_address = models.TextField()
     dropoff_address = models.TextField()
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='requested')
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='requested')
     created_at = models.DateTimeField(auto_now_add=True)
     fare = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
 
@@ -248,7 +248,7 @@ class EmergencyRequest(models.Model):
     STATUS_CHOICES = [
         ('requested', 'Requested'),
         ('accepted', 'Accepted'),
-        ('in_progress', 'Driving to Destination'),
+        ('driving_to_destination', 'Driving to Destination'),
         ('completed', 'Completed'),
         ('cancelled', 'Cancelled'),
     ]
@@ -259,7 +259,7 @@ class EmergencyRequest(models.Model):
     location_lng = models.FloatField()
     address = models.TextField()
     description = models.TextField()
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='requested')
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='requested')
     created_at = models.DateTimeField(auto_now_add=True)
     accepted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, limit_choices_to={'user_type': 'emergency_responder'})
 

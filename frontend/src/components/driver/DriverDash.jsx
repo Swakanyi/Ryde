@@ -1233,7 +1233,7 @@ const fetchAvailableRides = async () => {
         let newStatus = '';
         try {
             if (action === 'arrived') { await DriverService.updateRideStatus(rideId, 'driver_arrived'); newStatus = 'driver_arrived'; }
-            if (action === 'start') { await DriverService.startRide(rideId); newStatus = 'Driving to Destination'; }
+            if (action === 'start') { await DriverService.startRide(rideId); newStatus = 'driving_to_destination'; }
             if (action === 'complete') { await DriverService.completeRide(rideId); newStatus = 'completed'; }
             if (newStatus) websocketService.sendMessage('ride_status_update', { ride_id: rideId, status: newStatus, timestamp: new Date().toISOString() });
             fetchDashboardData();
@@ -1694,14 +1694,14 @@ const DashboardView = ({ data, onStatusUpdate, onRideAction, currentLocation, no
                         Start Ride
                       </button>
                     )}
-                    {data.current_ride.status === 'Driving to destination' && (
-                      <button 
-                        onClick={() => onRideAction(data.current_ride.id, 'complete')}
-                        className="bg-green-500 text-white px-3 py-2 rounded-lg text-sm hover:bg-green-600 transition-colors"
-                      >
-                        Complete
-                      </button>
-                    )}
+                    {data.current_ride.status === 'driving_to_destination' && (
+  <button 
+    onClick={() => onRideAction(data.current_ride.id, 'complete')}
+    className="bg-green-500 text-white px-3 py-2 rounded-lg text-sm hover:bg-green-600 transition-colors"
+  >
+    Complete Ride
+  </button>
+)}
                     {data.current_ride && (
      <button 
     onClick={() => onOpenChat(data.current_ride)}

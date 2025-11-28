@@ -159,7 +159,6 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     return R * c
 
 def geocode_address(address):
-    """Convert address to coordinates using Google Maps API"""
     try:
         base_url = 'https://maps.googleapis.com/maps/api/geocode/json'
         params = {
@@ -169,14 +168,15 @@ def geocode_address(address):
         }
         
         response = requests.get(base_url, params=params, timeout=10)
-        data = response.json()
         
-        print(f"Google Maps API Response: {data['status']}")  
+        # Check for HTTP errors
+        response.raise_for_status()
+        
+        data = response.json()
         
         if data['status'] == 'OK':
             result = data['results'][0]
             location = result['geometry']['location']
-            
             return {
                 'lat': location['lat'],
                 'lng': location['lng'],
@@ -186,6 +186,12 @@ def geocode_address(address):
             print(f"Google Maps API error: {data['status']}")
             return None
             
+    except requests.exceptions.Timeout:
+        print("Google Maps API timeout")
+        return None
+    except requests.exceptions.ConnectionError:
+        print("Google Maps API connection error")
+        return None
     except Exception as e:
         print(f"Google Maps geocoding error: {e}")
         return None
@@ -380,57 +386,57 @@ def request_ride(request):
                 print(f"⏭️ [Request Ride] Driver {driver.id} too far ({driver_to_pickup_distance}km > {MAX_DISTANCE_KM}km)")
             
             # Calculate distance
-            driver_to_pickup_distance = calculate_distance(
-                driver_lat, driver_lng,
-                pickup_coords['lat'], pickup_coords['lng']
-            )
+            # driver_to_pickup_distance = calculate_distance(
+            #     driver_lat, driver_lng,
+            #     pickup_coords['lat'], pickup_coords['lng']
+            # )
             
-            print(f"📍 [Request Ride] Driver {driver.id} distance to pickup: {driver_to_pickup_distance}km")
+            # print(f"📍 [Request Ride] Driver {driver.id} distance to pickup: {driver_to_pickup_distance}km")
             
            
-            MAX_DISTANCE_KM = 50  
+            # MAX_DISTANCE_KM = 50  
             
-            if driver_to_pickup_distance <= MAX_DISTANCE_KM:
-                notification_data = {
-                    'id': ride.id,
-                    'ride_id': ride.id,
-                    'customer_name': f"{ride.customer.first_name} {ride.customer.last_name}",
-                    'customer_phone': ride.customer.phone_number,
-                    'pickup_address': ride.pickup_address,
-                    'dropoff_address': ride.dropoff_address,
-                    'fare': str(ride.fare),
-                    'vehicle_type': ride.vehicle_type,
-                    'service_type': ride.service_type,
-                    'distance': f"{driver_to_pickup_distance:.1f} km",
-                    'estimated_pickup_time': f"{int(driver_to_pickup_distance * 3)} min",
-                    'created_at': ride.created_at.isoformat(),
-                }
+            # if driver_to_pickup_distance <= MAX_DISTANCE_KM:
+            #     notification_data = {
+            #         'id': ride.id,
+            #         'ride_id': ride.id,
+            #         'customer_name': f"{ride.customer.first_name} {ride.customer.last_name}",
+            #         'customer_phone': ride.customer.phone_number,
+            #         'pickup_address': ride.pickup_address,
+            #         'dropoff_address': ride.dropoff_address,
+            #         'fare': str(ride.fare),
+            #         'vehicle_type': ride.vehicle_type,
+            #         'service_type': ride.service_type,
+            #         'distance': f"{driver_to_pickup_distance:.1f} km",
+            #         'estimated_pickup_time': f"{int(driver_to_pickup_distance * 3)} min",
+            #         'created_at': ride.created_at.isoformat(),
+            #     }
                 
               
-                if ride.service_type != 'ride':
-                    notification_data.update({
-                        'package_description': ride.package_description,
-                        'package_size': ride.package_size,
-                        'recipient_name': ride.recipient_name,
-                        'is_courier': True
-                    })
+            #     if ride.service_type != 'ride':
+            #         notification_data.update({
+            #             'package_description': ride.package_description,
+            #             'package_size': ride.package_size,
+            #             'recipient_name': ride.recipient_name,
+            #             'is_courier': True
+            #         })
                 
-                print(f"📢 [WebSocket] Sending new_ride_request to driver_{driver.id}")
+            #     print(f"📢 [WebSocket] Sending new_ride_request to driver_{driver.id}")
                 
-                try:
-                    async_to_sync(channel_layer.group_send)(
-                        f"driver_{driver.id}",
-                        {
-                            "type": "new_ride_request",
-                            "data": notification_data
-                        }
-                    )
-                    notified_count += 1
-                    print(f"✅ [WebSocket] Notified driver {driver.id}")
-                except Exception as e:
-                    print(f"❌ [WebSocket] Failed to notify driver {driver.id}: {str(e)}")
-            else:
-                print(f"⏭️ [Request Ride] Driver {driver.id} too far ({driver_to_pickup_distance}km > {MAX_DISTANCE_KM}km)")
+            #     try:
+            #         async_to_sync(channel_layer.group_send)(
+            #             f"driver_{driver.id}",
+            #             {
+            #                 "type": "new_ride_request",
+            #                 "data": notification_data
+            #             }
+            #         )
+            #         notified_count += 1
+            #         print(f"✅ [WebSocket] Notified driver {driver.id}")
+            #     except Exception as e:
+            #         print(f"❌ [WebSocket] Failed to notify driver {driver.id}: {str(e)}")
+            # else:
+            #     print(f"⏭️ [Request Ride] Driver {driver.id} too far ({driver_to_pickup_distance}km > {MAX_DISTANCE_KM}km)")
         
         print(f"✅ [Request Ride] Notified {notified_count} drivers for ride {ride.id}")
         
@@ -649,10 +655,13 @@ def set_current_location(request):
     try:
         lat = float(lat)
         lng = float(lng)
+
+        if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+            return Response({"error": "Invalid coordinate values"}, status=400)
         
         
-        if not (-4.9 <= lat <= 5.0) or not (33.9 <= lng <= 42.0):
-            return Response({"error": "Coordinates outside Kenya bounds"}, status=400)
+        # if not (-4.9 <= lat <= 5.0) or not (33.9 <= lng <= 42.0):
+        #     return Response({"error": "Coordinates outside Kenya bounds"}, status=400)
             
     except (TypeError, ValueError):
         return Response({"error": "Invalid coordinates"}, status=400)
@@ -861,8 +870,8 @@ def update_ride_status(request, ride_id):
         valid_transitions = {
             'requested': ['accepted', 'cancelled'],
             'accepted': ['driver_arrived', 'cancelled'],
-            'driver_arrived': ['in_progress', 'cancelled'],
-            'in_progress': ['completed', 'cancelled'],
+            'driver_arrived': ['driving_to_destination', 'cancelled'],  # ✅ CHANGED
+            'driving_to_destination': ['completed', 'cancelled'],  # ✅ CHANGED
             'completed': [],
             'cancelled': []
         }
@@ -1118,7 +1127,7 @@ def driver_dashboard(request):
      
         current_ride = Ride.objects.filter(
             driver=request.user,
-            status__in=['accepted', 'driver_arrived', 'in_progress']
+            status__in=['accepted', 'driver_arrived', 'driving_to_destination']
         ).order_by('-created_at').first()  
         
         today = timezone.now().date()
@@ -1243,7 +1252,7 @@ def start_ride(request, ride_id):
         if ride.status != 'driver_arrived':
             return Response({"error": "Ride status must be 'driver_arrived' to start"}, status=400)
         
-        ride.status = 'in_progress'
+        ride.status = 'driving_to_destination'
         ride.actual_pickup_time = timezone.now()
         ride.save()
         
@@ -1269,7 +1278,7 @@ def complete_ride(request, ride_id):
     try:
         ride = Ride.objects.get(id=ride_id, driver=request.user)
         
-        if ride.status != 'in_progress':
+        if ride.status != 'driving_to_destination':
             return Response({"error": "Ride must be in progress to complete"}, status=400)
         
         ride.status = 'completed'
@@ -1869,7 +1878,7 @@ def admin_dashboard_stats(request):
    
     total_rides = Ride.objects.count()
     completed_rides = Ride.objects.filter(status='completed').count()
-    active_rides = Ride.objects.filter(status__in=['accepted', 'driver_arrived', 'in_progress']).count()
+    active_rides = Ride.objects.filter(status__in=['accepted', 'driver_arrived', 'driving_to_destination']).count()
     cancelled_rides = Ride.objects.filter(status='cancelled').count()
     
  
@@ -1904,7 +1913,7 @@ def admin_dashboard_stats(request):
     
     total_emergency_requests = EmergencyRequest.objects.count()
     active_emergency_requests = EmergencyRequest.objects.filter(
-        status__in=['requested', 'accepted', 'in_progress']
+        status__in=['requested', 'accepted', 'driving_to_destination']
     ).count()
     
     
@@ -2485,7 +2494,7 @@ def admin_usage_report(request):
     
     
     response_times = Ride.objects.filter(
-        status__in=['accepted', 'driver_arrived', 'in_progress', 'completed'],
+        status__in=['accepted', 'driver_arrived', 'driving_to_destination', 'completed'],
         driver__isnull=False
     ).annotate(
         response_time=models.ExpressionWrapper(

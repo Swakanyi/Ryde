@@ -361,11 +361,11 @@ const EditDriverModal = ({ driver, onClose, onUpdate }) => {
             onChange={(e) => setFilters(prev => ({ ...prev, approval_status: e.target.value }))}
             className="bg-white/5 border border-white/20 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-400"
           >
-            <option value="">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-            <option value="suspended">Suspended</option>
+            <option value="" className="text-black">All Status</option>
+            <option value="pending" className="text-black">Pending</option>
+            <option value="approved" className="text-black">Approved</option>
+            <option value="rejected" className="text-black">Rejected</option>
+            <option value="suspended"className="text-black">Suspended</option>
           </select>
 
           <select
@@ -373,10 +373,10 @@ const EditDriverModal = ({ driver, onClose, onUpdate }) => {
             onChange={(e) => setFilters(prev => ({ ...prev, vehicle_type: e.target.value }))}
             className="bg-white/5 border border-white/20 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-400"
           >
-            <option value="">All Vehicles</option>
-            <option value="car">Car</option>
-            <option value="boda">Boda</option>
-            <option value="tuk-tuk">Tuk-tuk</option>
+            <option value="" className="text-black">All Vehicles</option>
+            <option value="car" className="text-black">Car</option>
+            <option value="boda" className="text-black">Boda</option>
+            <option value="tuk-tuk" className="text-black">Tuk-tuk</option>
           </select>
 
           <select
@@ -384,9 +384,9 @@ const EditDriverModal = ({ driver, onClose, onUpdate }) => {
             onChange={(e) => setFilters(prev => ({ ...prev, has_documents: e.target.value }))}
             className="bg-white/5 border border-white/20 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-emerald-400"
           >
-            <option value="">All Documents</option>
-            <option value="complete">Complete</option>
-            <option value="incomplete">Incomplete</option>
+            <option value="" className="text-black">All Documents</option>
+            <option value="complete" className="text-black">Complete</option>
+            <option value="incomplete" className="text-black">Incomplete</option>
           </select>
 
           <button

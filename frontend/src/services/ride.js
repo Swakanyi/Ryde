@@ -2,67 +2,162 @@ import axios from 'axios';
 import AuthService from './auth';
 import config from '../config';
 
+const API_URL = `${config.API_URL}/auth`; // ✅ Add /auth to base URL
 
-const API_URL = `${config.API_URL}/auth`;
 class RideService {
   
- 
   async reverseGeocode(lat, lng) {
     try {
+      console.log('📍 [Service] Reverse geocoding:', { lat, lng });
+      
       const response = await axios.post(`${API_URL}/reverse-geocode/`, {
         lat: lat,
         lng: lng
       }, {
-        headers: AuthService.getAuthHeader()
+        headers: AuthService.getAuthHeader(),
+        timeout: 10000
       });
+      
+      console.log('✅ [Service] Reverse geocode success:', response.data);
       return response.data;
     } catch (error) {
-      console.error('Reverse geocoding error:', error);
+      console.error('❌ [Service] Reverse geocoding error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
       
       return {
-        address: `Current Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
-        display_name: `Current Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
+        address: `Current Location (${lat?.toFixed(4) || '0.0000'}, ${lng?.toFixed(4) || '0.0000'})`,
+        display_name: `Current Location (${lat?.toFixed(4) || '0.0000'}, ${lng?.toFixed(4) || '0.0000'})`,
         lat: lat,
-        lng: lng
+        lng: lng,
+        is_fallback: true
       };
     }
   }
 
-  
   async setCurrentLocation(locationData) {
     try {
+      console.log('📍 [Service] Setting current location:', locationData);
+      
       const response = await axios.post(`${API_URL}/set-current-location/`, locationData, {
-        headers: AuthService.getAuthHeader()
+        headers: AuthService.getAuthHeader(),
+        timeout: 15000
       });
+      
+      console.log('✅ [Service] Location set successfully:', response.data);
       return response.data;
     } catch (error) {
-      console.error('Set current location error:', error);
-      throw error.response?.data || error;
+      console.error('❌ [Service] Set current location error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        data_sent: locationData
+      });
+      
+      let errorMessage = 'Failed to set location';
+      
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.response?.status === 400) {
+        errorMessage = 'Invalid location data provided';
+      } else if (error.response?.status === 403) {
+        errorMessage = 'Not authorized to set location';
+      } else if (error.code === 'ECONNABORTED') {
+        errorMessage = 'Location setting timed out';
+      }
+      
+      throw new Error(errorMessage);
     }
   }
 
- 
   async calculateRoute(routeData) {
     try {
+      console.log('🔄 [Service] Calculating route:', routeData);
+      
       const response = await axios.post(`${API_URL}/rides/calculate-route/`, routeData, {
-        headers: AuthService.getAuthHeader()
+        headers: AuthService.getAuthHeader(),
+        timeout: 30000
       });
+      
+      console.log('✅ [Service] Route calculated successfully');
       return response.data;
     } catch (error) {
-      console.error('Route calculation error:', error);
-      throw error.response?.data || error;
+      console.error('❌ [Service] Route calculation error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      
+      let errorMessage = 'Failed to calculate route';
+      
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.code === 'ECONNABORTED') {
+        errorMessage = 'Route calculation timed out. Please try again.';
+      }
+      
+      throw new Error(errorMessage);
     }
   }
 
-  
+  async autocompleteAddress(query, locationData = {}) {
+    try {
+      console.log('🔍 [Service] Autocomplete query:', query, 'Location:', locationData);
+      
+      const requestData = { query };
+      
+      if (locationData.lat && locationData.lng) {
+        requestData.lat = locationData.lat;
+        requestData.lng = locationData.lng;
+      }
+      
+      const response = await axios.post(`${API_URL}/autocomplete-address/`, requestData, {
+        headers: AuthService.getAuthHeader(),
+        timeout: 10000
+      });
+      
+      console.log('✅ [Service] Autocomplete results:', response.data.suggestions?.length || 0);
+      return response.data.suggestions || [];
+    } catch (error) {
+      console.error('❌ [Service] Autocomplete error:', error.response?.data || error.message);
+      return [];
+    }
+  }
+
   async requestRide(rideData) {
     try {
+      console.log('🚗 [Service] Requesting ride:', rideData);
+      
+      // Validate required fields
+      if (!rideData.pickup_address || !rideData.dropoff_address) {
+        throw new Error('Pickup and dropoff addresses are required');
+      }
+      
       const response = await axios.post(`${API_URL}/rides/request/`, rideData, {
-        headers: AuthService.getAuthHeader()
+        headers: AuthService.getAuthHeader(),
+        timeout: 30000
       });
+      
+      console.log('✅ [Service] Ride requested successfully');
       return response.data;
     } catch (error) {
-      throw error.response?.data || error;
+      console.error('❌ [Service] Ride request error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      
+      let errorMessage = 'Failed to request ride';
+      
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.response?.data?.service_type) {
+        errorMessage = `Service type error: ${error.response.data.service_type[0]}`;
+      }
+      
+      throw new Error(errorMessage);
     }
   }
 
@@ -83,10 +178,10 @@ class RideService {
       const response = await axios.get(`${API_URL}/rides/my-rides/`, {
         headers: AuthService.getAuthHeader()
       });
-      console.log('✅ [RideService] Ride history loaded:', response.data);
-      return response.data;
+      console.log('✅ [Service] Ride history loaded:', response.data?.length || 0, 'rides');
+      return response.data || [];
     } catch (error) {
-      console.error('Error fetching ride history:', error);
+      console.error('❌ [Service] Error fetching ride history:', error);
       return [];
     }
   }
@@ -98,6 +193,7 @@ class RideService {
       });
       return response.data;
     } catch (error) {
+      console.error('❌ [Service] Geocoding error:', error);
       throw error.response?.data || error;
     }
   }
@@ -169,30 +265,6 @@ class RideService {
     }
   }
 
-async autocompleteAddress(query, locationData = {}) {
-  try {
-    console.log('🔍 [Autocomplete] Sending query:', query, 'Location:', locationData);
-    
-    const requestData = { query };
-    
-    
-    if (locationData.lat && locationData.lng) {
-      requestData.lat = locationData.lat;
-      requestData.lng = locationData.lng;
-    }
-    
-    const response = await axios.post(`${API_URL}/autocomplete-address/`, requestData, {
-      headers: AuthService.getAuthHeader()
-    });
-    
-    console.log('✅ [Autocomplete] Backend response:', response.data);
-    return response.data.suggestions || [];
-  } catch (error) {
-    console.error('❌ [Autocomplete] Error:', error.response?.data || error.message);
-    return [];
-  }
-}
-
   async getPlaceDetails(placeId) {
     try {
       const response = await axios.post(`${API_URL}/place-details/`, { place_id: placeId }, {
@@ -232,7 +304,6 @@ async autocompleteAddress(query, locationData = {}) {
     }
   }
 
-  
   async declineRide(rideId) {
     try {
       const response = await axios.post(`${API_URL}/rides/${rideId}/decline/`, {}, {
@@ -244,7 +315,6 @@ async autocompleteAddress(query, locationData = {}) {
     }
   }
 
- 
   async testGoogleAPI() {
     try {
       const response = await axios.get(`${API_URL}/test-google-api/`, {
@@ -257,7 +327,6 @@ async autocompleteAddress(query, locationData = {}) {
     }
   }
 
-  
   async getNearbyDrivers(lat, lng, radius = 5) {
     try {
       const response = await axios.get(`${API_URL}/map/nearby-drivers/`, {
@@ -268,6 +337,55 @@ async autocompleteAddress(query, locationData = {}) {
     } catch (error) {
       console.error('Error fetching nearby drivers:', error);
       return [];
+    }
+  }
+
+  // NEW: Test backend connectivity
+  async testBackendConnection() {
+    try {
+      const response = await axios.get(`${API_URL}/test-google-api/`, {
+        headers: AuthService.getAuthHeader(),
+        timeout: 10000
+      });
+      
+      return {
+        success: true,
+        data: response.data,
+        message: 'Backend is reachable',
+        url: API_URL
+      };
+    } catch (error) {
+      console.error('❌ Backend connection test failed:', error);
+      return {
+        success: false,
+        error: error.message,
+        message: `Cannot connect to backend at ${API_URL}`,
+        url: API_URL
+      };
+    }
+  }
+
+  // NEW: Validate coordinates with backend
+  async validateCoordinates(lat, lng) {
+    try {
+      const response = await axios.post(`${API_URL}/reverse-geocode/`, {
+        lat: lat,
+        lng: lng
+      }, {
+        headers: AuthService.getAuthHeader()
+      });
+      
+      return {
+        valid: true,
+        data: response.data,
+        message: 'Coordinates are valid'
+      };
+    } catch (error) {
+      return {
+        valid: false,
+        error: error.message,
+        message: 'Invalid coordinates or service unavailable'
+      };
     }
   }
 }
